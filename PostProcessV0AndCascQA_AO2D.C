@@ -1,0 +1,817 @@
+// Adaptation of Post Processing macro used for Strangeness QA of Run2 AODs
+// ========================================================================
+//
+//    This macro was originally written for Run2 Strangeness QA by:
+//    alessandro.balbino@cern.ch
+//    chiara.de.martin@cern.ch
+
+#include "TStyle.h"
+#include "TFile.h"
+#include "TFitResult.h"
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TH3F.h"
+#include "TCanvas.h"
+#include "TPad.h"
+#include "TF1.h"
+#include "TLatex.h"
+#include "TLine.h"
+#include "TRatioPlot.h"
+#include "TLegend.h"
+
+Bool_t reject=kTRUE;
+Double_t fparab(Double_t *x, Double_t *par) {
+  const Int_t numPart=7;
+  Float_t liminf[numPart]={0.48, 1.11, 1.11, 1.31,  1.31,  1.665, 1.665};
+  Float_t limsup[numPart]={0.54, 1.13, 1.13, 1.335, 1.335, 1.685, 1.685};
+  Int_t part=par[3];
+  if (reject && x[0] > liminf[part] && x[0] < limsup[part]) {
+    TF1::RejectPoint();
+    return 0;
+  }
+  return par[0] + par[1]*x[0] + par[2]*x[0]*x[0];
+}
+
+void checkExactLimit(TH1F *lHist, Float_t limit, bool isMinLimit, TLatex labels[]);
+void checkIntervalWidth(TH1F *lHist, float width, TLatex labels[]);
+void checkBoundaries(TH1F *lHist, Float_t lower_bound, Float_t upper_bound, TLatex labels[]);
+void checkBoundaries(Float_t value1, Float_t lower_bound1, Float_t upper_bound1, Float_t value2, Float_t lower_bound2, Float_t upper_bound2, TLatex labels[]);
+void setPadOptions(bool useLogY);
+void setHistGraphics(TH1F *lHist, bool isOldPass);
+float findMaximum(TH1F *lHist, float width);
+float findMaxValue(TH1F *lHist1, TH1F *lHist2);
+Double_t SetEfficiencyError(Int_t k, Int_t n);
+  
+void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int_t RebinTPC=0,
+                      Int_t SkipCascFits = 0, // 0 = don't skip, 1 = skip Omegas, 2 = skip all cascades
+                      Bool_t TopologyOnly = false, // true = only topology analysis, false = complete analysis
+                      Float_t yRangeGen = 0.5, //rapidity range of generated particles 
+                      TString PathIn  = "../AnalysisResults_AO2D_Test.root"/*"../results/mc/AOD/LHC20f5b_AOD235/AnalysisResults.root"*/, // input file name
+		                  TString PathOut = "TestQAInO2"/*"../results/mc/AOD/LHC20f5b_AOD235/PostProcessLHC20f5_AOD235"*/,                     // output file name
+                      Bool_t CheckOldPass = false,                                                // true to compare two passes
+                      TString OldPassPath = ".."                  // input/output file name (old pass to be compared with)
+                      ) {
+  // Define pass names
+  TString pass_names[2] = {"pass1", "pass3"};
+  // Define text
+  TLatex cutCheckLabels[8] = {TLatex(0.35,0.8,"#scale[0.8]{#color[3]{BOUNDARIES: OK!!}}"), TLatex(0.2,0.7,"#scale[0.8]{#color[2]{TIGHTER CUT WRT EXPECTED!!}}"), TLatex(0.2,0.7,"#scale[0.8]{#color[42]{LOOSER CUT WRT EXPECTED!!}}"), TLatex(0.2,0.63,"#scale[0.8]{#color[2]{PROBLEM FOR ANALYSIS}}"), TLatex(0.2,0.63,"#scale[0.8]{#color[42]{NOT AN ISSUE FOR ANALYSIS}}"), TLatex(0.3,0.8,"#scale[0.8]{#color[42]{OUTSIDE BOUNDARIES!!}}"), TLatex(0.3,0.77,"#scale[0.8]{#color[42]{PLEASE CHECK.}}"), TLatex(0.35,0.8,"#scale[0.8]{#color[3]{OK!!}}")};
+  for(int i=0; i<8; i++) {cutCheckLabels[i].SetNDC();}
+  TFile *f = new TFile(PathIn, "");
+  if (!f) {
+    printf("\nFILE NOT FOUND!\n");
+    return;
+  }
+  TDirectoryFile *dir = (TDirectoryFile*)f->Get("v0cascades-q-a");
+  if (!dir) {
+    printf("\nMAIN DIRECTORY NOT FOUND!\n");
+    return;
+  }
+  TDirectoryFile *dirEvt = (TDirectoryFile*)dir->Get("histos-eve");
+  if (!dirEvt) {
+    printf("\nEVENTS DIRECTORY NOT FOUND!\n");
+    return;
+  }
+  TDirectoryFile *dirCasc = (TDirectoryFile*)dir->Get("histos-Casc");
+  if (!dirCasc) {
+    printf("\nCASC DIRECTORY NOT FOUND!\n");
+    return;
+  }
+  TDirectoryFile *dirV0 = (TDirectoryFile*)dir->Get("histos-V0");
+  if (!dirV0) {
+    printf("\nV0 DIRECTORY NOT FOUND!\n");
+    return;
+  }
+  
+  gStyle->SetOptStat(kFALSE);
+
+  const Int_t numPart = 7;
+  TString NamehistoInvMass[numPart] = {"InvMassK0S", "InvMassLambda", "InvMassAntiLambda","InvMassXiPlus", "InvMassXiMinus", "InvMassOmegaPlus", "InvMassOmegaMinus"};
+  TString NamePart[numPart] = {"K0S", "Lam", "ALam", "XiPlu", "XiMin", "OmPlu", "OmMin"};
+  Float_t MassPart[numPart] = {0.497611, 1.115683, 1.115683, 1.32171, 1.32171, 1.67245, 1.67245};
+  Float_t MassPartLimits[numPart] = {0.005, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001};
+  Float_t WidthPartLimits[2][numPart] = {{0.003, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001}, {0.01, 0.005, 0.005, 0.005, 0.005, 0.008, 0.008}};
+
+  //histo of generated particles (MC)
+  TCanvas *  canvasMC[numPart];
+  TH3F*  fHistGen3D = {nullptr};
+  TH2F*  fHistGen2D = {nullptr};
+  TH1F*  fHistGen[numPart];
+  TH1F*  fHistGenPtBins[numPart];
+  TH1F*  fHistEff[numPart];
+  Float_t CountsGenPt[numPart]={0};
+
+  cout << "Processing Events" << endl;
+  TH1F *henum = (TH1F*) dirEvt->Get("hEventCounter");
+  if (!henum) {cout << "henum histo not found! " << endl; return;}
+  Double_t NEvents = henum->GetEntries();
+  
+  if (isMC){
+    
+    fHistGen3D = (TH3F*)dirEvt->Get("GeneratedParticles");
+    if (!fHistGen3D) return;
+       
+    fHistGen3D->GetZaxis()->SetRangeUser(-yRangeGen, yRangeGen);
+    fHistGen2D=(TH2F*)fHistGen3D->Project3D("yxo");
+    fHistGen2D->SetName("GeneratedParticles2D");
+   
+  }
+
+  TFile *f_old = CheckOldPass ? new TFile(OldPassPath, "") : nullptr;
+  TFile *f_out = new TFile(PathOut+".root", "recreate");
+
+  // V0 topology
+  TCanvas *canvasTopologyV0 = new TCanvas ("canvasTopologyV0", "", 1000, 700);
+  canvasTopologyV0->Divide(3,2);
+  const Int_t NTopV0variables = 5;
+  TString TopVarV0Input[NTopV0variables] = {"V0DCAPosToPV", "V0DCANegToPV", "V0DCAV0Daughters", "CosPA", "V0Radius"};
+  TString TopVarV0[NTopV0variables] = {"V0 DCA Pos. To PV", "V0 DCA Neg. To PV", "V0 DCA V0 Daughters", "#it{cos}#theta_{PA}", "#it{R}"};
+  TString TopVarV0Unit[NTopV0variables] = {"(cm)", "(cm)", "(#sigma)", "", "(cm)"};
+  float TopVarV0Cuts[NTopV0variables];
+  const float TopVarV0CutsPbPb[NTopV0variables] = {0.1, 0.1, 1.4, 0.95, 0.9};
+  const float TopVarV0Cutspp[NTopV0variables] = {0.03, 0.03, 2, 0.95, 0.9};
+  for (Int_t i=0; i<NTopV0variables; i++){
+    if (CollType=="PbPb") TopVarV0Cuts[i] = TopVarV0CutsPbPb[i];
+    else  TopVarV0Cuts[i] = TopVarV0Cutspp[i];
+  }
+  TH1F *fHistTopV0[NTopV0variables];
+  for (int var=0; var<NTopV0variables; var++){
+    fHistTopV0[var] = (TH1F*)dirV0->Get(TopVarV0Input[var]);
+    if (!fHistTopV0[var]) {cout << "Histo " << TopVarV0Input[var] << " with topo variables of V0 not found" << endl; return;}
+    fHistTopV0[var]->Scale(1./NEvents);
+    //fHistTopV0[var]->GetYaxis()->SetRangeUser(0.1*fHistTopV0[var]->GetMinimum(1.e-10), 10*fHistTopV0[var]->GetMaximum());
+    fHistTopV0[var]->GetYaxis()->SetRangeUser(10e-4, 10*fHistTopV0[var]->GetMaximum());
+    fHistTopV0[var]->SetTitle(TopVarV0[var]);
+    fHistTopV0[var]->GetXaxis()->SetTitle(TopVarV0[var] + " " + TopVarV0Unit[var]);
+    fHistTopV0[var]->GetYaxis()->SetTitle("1/N_{ev} Counts");
+    canvasTopologyV0->cd(var+1);
+    fHistTopV0[var]->DrawCopy("hist");
+    checkExactLimit(fHistTopV0[var], TopVarV0Cuts[var], (var!=2) ? true : false, cutCheckLabels);
+    setPadOptions(true);
+    fHistTopV0[var]->Write();
+  }
+  canvasTopologyV0->SaveAs(PathOut+".pdf(");
+
+  // Cascade topology
+  cout << "Processing Cascade topology" << endl;
+  const int kNCanvases = 5;
+  TCanvas *canvasTopologyCasc[kNCanvases];
+  const int kNvariblesPerCanvas[kNCanvases] = {2, 6, 6, 4, 4};
+  const int kCumvariblesPerCanvas[kNCanvases+1] = {0, 2, 8, 14, 18, 22};
+  const int NTopCascInput = 18;
+  const int NTopCascVar = 22;
+  TString TopVarCascInput[NTopCascInput] = {"CascPt", "V0Ctau", "CascCosPA", "V0CosPA", "V0CosPAToXi", "CascRadius", "V0Radius", "InvMassLambdaDaughter", "DcaCascDaughters", "DcaV0Daughters", "DcaBachToPV", "DcaV0ToPV", "DcaPosToPV", "DcaNegToPV", "CascyXi", "CascCtauXi", "CascyOmega", "CascCtauOmega"};
+  TString TopVarCasc[NTopCascVar] = {"Casc #it{p}_{T}", "V0 #it{c}#tau", "Casc #it{cos}#theta_{PA}", "V0 #it{cos}#theta_{PA}", "V0 #it{cos}#theta_{PA} To Casc", "Casc #it{R}", "V0 #it{R}", "#it{m}_{inv} #Lambda Daughter", "DCA Casc Daughters", "DCA V0 Daughters", "DCA Bach. To PV", "DCA V0 To PV", "DCA Pos. To PV", "DCA Neg. To PV", "#it{y}_{#Xi^{-}}", "#it{c}#tau_{ #Xi^{-}}", "#it{y}_{#Omega^{-}}", "#it{c}#tau_{ #Omega^{-}}", "#it{y}_{#Xi^{+}}", "#it{c}#tau_{ #Xi^{+}}", "#it{y}_{#Omega^{+}}", "#it{c}#tau_{ #Omega^{+}}"};
+  TString TopVarCascUnit[NTopCascVar] = {"(GeV/#it{c})", "(cm)", "", "", "", "(cm)", "(cm)", "(GeV/#it{c}^2)", "(cm)", "(cm)", "(cm)", "(cm)", "(cm)", "(cm)", "", "(cm)", "", "(cm)", "", "(cm)", "", "(cm)"};
+  float TopVarCascCuts[NTopCascVar];
+  const float TopVarCascCutsPbPb[NTopCascVar]= {-100., -100., 0.95, 0.95, -100., 0.5, 0.9, -100., 1.4, 1.4, 0.02, 0.05, 0.1, 0.1, -100., -100., -100., -100., -100., -100., -100., -100.};
+  const float TopVarCascCutspp[NTopCascVar]={-100., -100., 0.95, 0.95, -100., 0.5, 0.9, -100., 2.0, 2.0, 0.05, 0.05, 0.03, 0.03, -100., -100., -100., -100., -100., -100., -100., -100.};
+  for (Int_t i=0; i<NTopCascVar; i++){
+    if (CollType=="PbPb") TopVarCascCuts[i] = TopVarCascCutsPbPb[i];
+    else TopVarCascCuts[i] = TopVarCascCutspp[i];
+  }
+  Float_t InvMassWindow = 0.012;
+  if (CollType=="PbPb") InvMassWindow = 0.012;
+  else  InvMassWindow=0.008;
+ 
+  const int TopVarCascCutsCheckLimit[NTopCascVar] = {0, 0, 2, 2, 0, 2, 2, 0, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0}; // 0 = limit not checked, 1 = max limit, 2 = min limit
+  TH2F *fHistTopCasc2D[NTopCascInput];
+  TH1F *fHistTopCasc1D[NTopCascVar];
+  
+  for (int i_Canv=0; i_Canv<kNCanvases; i_Canv++){
+    canvasTopologyCasc[i_Canv] = new TCanvas (Form("canvasTopologyCasc_%i", i_Canv), "", 1000, 700);
+    if (!i_Canv) {
+      canvasTopologyCasc[i_Canv]->Divide(2,1);
+    } else {
+      (i_Canv>2) ? canvasTopologyCasc[i_Canv]->Divide(2,2) : canvasTopologyCasc[i_Canv]->Divide(3,2);
+    }
+    for (int var=kCumvariblesPerCanvas[i_Canv]; var<kCumvariblesPerCanvas[i_Canv+1]; var++) {
+      if (var<18) {
+        fHistTopCasc2D[var] = (TH2F*)dirCasc->Get(TopVarCascInput[var]);
+        if (!fHistTopCasc2D[var]) {cout << "Histo " << TopVarCascInput[var] << " with topo variables of Cascades not found" << endl; return;}
+        fHistTopCasc1D[var] = (var<14) ? (TH1F*)fHistTopCasc2D[var]->ProjectionX(TopVarCascInput[var]) : (TH1F*)fHistTopCasc2D[var]->ProjectionX(TopVarCascInput[var], 1, 1);
+      } else {
+        fHistTopCasc1D[var] = (TH1F*)fHistTopCasc2D[var-4]->ProjectionX(TopVarCascInput[var-4], 2, 2);
+      }
+      canvasTopologyCasc[i_Canv]->cd(var+1-kCumvariblesPerCanvas[i_Canv]);
+      fHistTopCasc1D[var]->Scale(1./NEvents);
+      if (var>1 && var<14 && var!=7) fHistTopCasc1D[var]->GetYaxis()->SetRangeUser(0.1*fHistTopCasc1D[var]->GetMinimum(1.e-10), 10*fHistTopCasc1D[var]->GetMaximum());
+      fHistTopCasc1D[var]->GetXaxis()->SetTitle(TopVarCasc[var] + " " + TopVarCascUnit[var]);
+      fHistTopCasc1D[var]->GetYaxis()->SetTitle("1/N_{ev} Counts");
+      fHistTopCasc1D[var]->SetTitle(TopVarCasc[var]);
+      fHistTopCasc1D[var]->DrawCopy("hist");
+      if (TopVarCascCutsCheckLimit[var]) {
+        checkExactLimit(fHistTopCasc1D[var], TopVarCascCuts[var], TopVarCascCutsCheckLimit[var]-1, cutCheckLabels);
+      }
+      if (var==7) {
+        checkIntervalWidth(fHistTopCasc1D[var], InvMassWindow, cutCheckLabels);
+      }
+      if (var>1 && var!=7 && var<=13) {
+	      setPadOptions(true);
+      } else {
+        setPadOptions(false);
+      }
+      fHistTopCasc1D[var]->Write();
+    }
+    (TopologyOnly && i_Canv==(kNCanvases-1)) ? canvasTopologyCasc[i_Canv]->SaveAs(PathOut+".pdf)") : canvasTopologyCasc[i_Canv]->SaveAs(PathOut+".pdf");
+  }
+  if (TopologyOnly) return;
+
+  // Define pt binning
+  const Int_t numPt = 7;
+  Float_t NPt[numPt][2] = {{0., 10.}, {0., 1.}, {1., 2.}, {2., 3.}, {3., 4.}, {4., 6.}, {6., 10.}};
+  TString SPt[numPt] = {"0.0-10.0", "0.0-1.0", "1.0-2.0", "2.0-3.0", "3.0-4.0", "4.0-6.0", "6.0-10.0"};
+  Float_t PtVector[numPt] = {0., 1., 2., 3., 4., 6., 10.};
+  
+  // dE/dx measurements of lambda daughters
+  cout << "Processing lambda daughters" << endl;
+  NPt[0][0]=0.4; 
+  NPt[1][0]=0.4; 
+  SPt[0]="0.4-10.0";
+  SPt[1]="0.4-1.0";
+  const int nDaughters = 2;
+  TString LambdaDaugters[nDaughters] = {"#pi", "p"};
+  TString LambdaDaugtersLong[nDaughters] = {"Pion", "Proton"};
+  TH2F *fhistodEdxDaughters2D[nDaughters];
+  TCanvas *canvasDaughtersdEdx[nDaughters];
+  TH1F *fhistodEdxDaughters1D[numPt][nDaughters];
+  TH1F *fHistPeak[nDaughters];
+  TCanvas *canvasLambdaDaughtersvsPt = new TCanvas ("canvasLambdaDaughtersvsPt", "canvasLambdaDaughtersvsPt", 1200, 800);
+  canvasLambdaDaughtersvsPt->Divide(2,1);
+  for (int iDaughter = 0; iDaughter<nDaughters; iDaughter++) {
+    fhistodEdxDaughters2D[iDaughter] = (TH2F*) dirV0->Get("Response" + LambdaDaugtersLong[iDaughter] + "FromLambda");
+    canvasDaughtersdEdx[iDaughter] = new TCanvas ("canvas" + LambdaDaugtersLong[iDaughter] + "dEdx", "canvas" + LambdaDaugtersLong[iDaughter] + "dEdx", 1200, 800);
+    canvasDaughtersdEdx[iDaughter]->Divide(3, 2);
+    fHistPeak[iDaughter] = new TH1F("TPCNsigmaPeak_"+LambdaDaugtersLong[iDaughter], "TPCNsigmaPeak_"+LambdaDaugtersLong[iDaughter], numPt-1, PtVector);
+    for (Int_t pt=0; pt<numPt; pt++) {
+      if (pt==0) continue;
+      fhistodEdxDaughters1D[pt-1][iDaughter] = (TH1F*) fhistodEdxDaughters2D[iDaughter]->ProjectionY(Form(LambdaDaugtersLong[iDaughter]+"dEdx_1D_Pt%i", pt), fhistodEdxDaughters2D[iDaughter]->GetXaxis()->FindBin(NPt[pt][0]+0.0001), fhistodEdxDaughters2D[iDaughter]->GetXaxis()->FindBin(NPt[pt][1]-0.0001));
+      if (RebinTPC) fhistodEdxDaughters1D[pt-1][iDaughter]->Rebin(RebinTPC);
+      fhistodEdxDaughters1D[pt-1][iDaughter]->SetTitle("TPC n_{#sigma} " + LambdaDaugters[iDaughter] + " from #Lambda "+SPt[pt]+ " GeV/c");
+      fhistodEdxDaughters1D[pt-1][iDaughter]->GetXaxis()->SetTitle("n_{#sigma}");
+      fhistodEdxDaughters1D[pt-1][iDaughter]->GetYaxis()->SetTitle("Counts");
+      canvasDaughtersdEdx[iDaughter]->cd(pt);
+      fhistodEdxDaughters1D[pt-1][iDaughter]->Draw();
+      setPadOptions(false);
+      fHistPeak[iDaughter]->SetBinContent(pt, findMaximum(fhistodEdxDaughters1D[pt-1][iDaughter], 3.));
+      fHistPeak[iDaughter]->SetBinError(pt, 0.);
+    }
+    canvasDaughtersdEdx[iDaughter]->SaveAs(PathOut+".pdf");
+    canvasLambdaDaughtersvsPt->cd(iDaughter+1);
+    fHistPeak[iDaughter]->GetYaxis()->SetRangeUser(-1.5, 1.5);
+    fHistPeak[iDaughter]->GetXaxis()->SetTitle("p_{T} (GeV/c)");
+    fHistPeak[iDaughter]->GetYaxis()->SetTitle("N_{#sigma} Peak");
+    fHistPeak[iDaughter]->Draw("e");
+    setPadOptions(false);
+  }
+  canvasLambdaDaughtersvsPt->SaveAs(PathOut+".pdf");
+     
+  // V0 and cascade invariant mass
+  cout << "Processing V0 and cascade invariant masses" << endl;
+  TCanvas *canvasMassvsPt[numPart];
+  TCanvas *canvasMass[numPart];
+  TCanvas *canvasResultsvsPt[numPart];
+  TH2F *fhistoInvMass2D[numPart];
+  TH2F *fhistoInvMass2DTrue[numPart];
+  TH1F *fhistoInvMass1D[numPart][numPt];
+  TH1F *fhistoInvMass1DTrue[numPart][numPt];
+  TH1F *fhistoPt1DTrue[numPart];
+
+  Float_t min_range_signal[numPart] = {0.485, 1.112, 1.112, 1.315, 1.315, 1.668, 1.668};
+  Float_t max_range_signal[numPart] = {0.51, 1.12, 1.12, 1.328, 1.328, 1.677, 1.677};
+  Float_t liminf[numPart] = {0.44, 1.09, 1.09, 1.30, 1.30, 1.65, 1.65};
+  Float_t limsup[numPart] = {0.58, 1.15, 1.15, 1.35, 1.35, 1.70, 1.70};
+  TF1 *gauss[numPart][numPt];
+  TF1 *bkgparab[numPart][numPt];
+  TF1 *total[numPart][numPt];
+  TF1 *totalbis[numPart][numPt];
+     
+  Double_t parGaussParab[numPart][numPt][6];  
+  TFitResultPtr fFitResultPtr0[numPart][numPt];
+  TFitResultPtr fFitResultPtr1[numPart][numPt];
+
+  Double_t Mean[numPart][numPt];
+  Double_t ErrMean[numPart][numPt];
+  Double_t Sigma[numPart][numPt];
+  Double_t ErrSigma[numPart][numPt];
+  Double_t sigmas[numPart][numPt];
+  Double_t sigmab[numPart][numPt];
+  Double_t YieldS[numPart][numPt];
+  Double_t YieldB[numPart][numPt];
+  Float_t YieldSNotScaled[numPart][numPt];
+  Float_t YieldBNotScaled[numPart][numPt];
+  Double_t IntegralS[numPart][numPt];
+  Double_t IntegralB[numPart][numPt];
+  Double_t ErrYieldS[numPart][numPt];
+  Double_t ErrYieldB[numPart][numPt];
+  Double_t SSB[numPart][numPt];
+  Double_t ErrSSB[numPart][numPt];
+  Double_t SPlusB[numPart][numPt] = {0};
+  
+  TH1F *fHistMean[numPart];
+  TH1F *fHistSigma[numPart];
+  TH1F *fHistYield[numPart];
+  TH1F *fHistSSB[numPart];
+
+  for (Int_t part=0; part<numPart; part++){
+    
+    if (part==0) {
+      NPt[0][0]=0.; 
+      NPt[1][0]=0.; 
+      PtVector[0]=0.;
+      SPt[0]="0.0-10.0";
+      SPt[1]="0.0-1.0";
+    }
+    else if (part==1 || part==2) {
+      NPt[0][0]=0.4; 
+      NPt[1][0]=0.4; 
+      PtVector[0]=0.4;
+      SPt[0]="0.4-10.0";
+      SPt[1]="0.4-1.0";
+    }
+    else if (part==3 || part==4) {
+      NPt[0][0]=0.5; 
+      NPt[1][0]=0.5; 
+      PtVector[0]=0.5;
+      SPt[0]="0.5-10.0";
+      SPt[1]="0.5-1.0";
+    }
+    else {
+      NPt[0][0]=0.9; 
+      NPt[1][0]=0.9; 
+      NPt[1][1]=1.5; 
+      NPt[2][0]=1.5; 
+      PtVector[0]=0.9;
+      PtVector[1]=1.5;
+      SPt[0]="0.9-10.0"; 
+      SPt[1]="0.9-1.5";
+      SPt[2]="1.5-2.0";
+    }
+    
+    //yields of generated particles and selected true particles + efficiencis (only in the case of MC)
+    if (isMC){
+      if (part==0) fHistGen3D->Write();
+      if (part==0) fHistGen2D->Write();
+      
+      Int_t partGen=  part;
+    
+      canvasMC[part] = new TCanvas (Form("canvasMC%i", part), Form("canvasMC%i", part), 1200, 800);
+      canvasMC[part]->Divide(3,1);
+
+	    if (part==0) partGen = 0; //K0s
+	    else if (part==1) partGen = 2; //Lambda
+	    else if (part==2) partGen = 4; //Alambda
+	    else if (part==3) partGen = 8; //Xi+
+	    else if (part==4) partGen = 6; //Xi-
+	    else if (part==5) partGen = 10; //Omega+
+	    else if (part==6) partGen = 12; //Omega-
+
+      fHistGen[part] = (TH1F*) fHistGen2D->ProjectionY("GeneratedParticles_"+NamePart[part], fHistGen2D->GetXaxis()->FindBin(partGen+0.5), fHistGen2D->GetXaxis()->FindBin(partGen+0.5), "e");
+      fHistGen[part]->Rebin(4);
+      
+      /* this part can be used if we want to calculate the efficieny in the same pt bins in which we obtain the raw yields
+      fHistGenPtBins[part] = new TH1F("GenPtBins_"+NamePart[part], "GenPtBins_"+NamePart[part], numPt, NPt);
+      for (Int_t b=1; b<=numPt; b++){
+	     CountsGenPt[part] =0;
+	     for(Int_t l=fHistGen[part]->GetXaxis()->FindBin(NPt[b-1]+0.001);  l<=fHistGen[part]->GetXaxis()->FindBin(NPt[b]-0.001); l++ ){
+	      cout << l << endl;
+	      CountsGenPt[part]+= fHistGen[part]->GetBinContent(l);
+	     }
+	     CountsGenPt[part]= 	  CountsGenPt[part]/fHistYield[part]->GetBinWidth(b);
+	     fHistGenPtBins[part]->SetBinContent(b,	  CountsGenPt[part]/NEvents);
+      }
+      fHistGenPtBins[part]->Write();
+      */
+      
+      if (part<3) {
+	      fhistoInvMass2DTrue[part] = (TH2F*)dirV0->Get(NamehistoInvMass[part]+"True");
+      } else {
+	      fhistoInvMass2DTrue[part] = (TH2F*)dirCasc->Get(NamehistoInvMass[part]+"True");
+      }
+      if (!fhistoInvMass2DTrue[part]) continue;
+      fhistoPt1DTrue[part] = (TH1F*) fhistoInvMass2DTrue[part]->ProjectionX(NamehistoInvMass[part]+"True_PtProj", 0, -1,"E");
+      fhistoPt1DTrue[part]->Rebin(4);
+      
+      fHistEff[part] = (TH1F*) fhistoPt1DTrue[part]->Clone("Efficiency_"+NamePart[part]);
+      fHistEff[part]->Divide(fHistGen[part]);
+      for (Int_t b=1; b<=fhistoPt1DTrue[part]->GetNbinsX(); b++){
+	      fHistEff[part]->SetBinError(b,SetEfficiencyError(fhistoPt1DTrue[part]->GetBinContent(b), fHistGen[part]->GetBinContent(b)));
+      }
+
+      fhistoPt1DTrue[part]->Scale(1./NEvents/fhistoPt1DTrue[part]->GetBinWidth(1));
+      fHistGen[part]->Scale(1./NEvents/fHistGen[part]->GetBinWidth(1));
+      
+      canvasMC[part]->cd(1);
+      setPadOptions(false);
+      setHistGraphics(fHistGen[part], false);
+      fHistGen[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dp_{T}");
+      fHistGen[part]->SetTitle("Generated "+NamePart[part]+ " Yield");
+      fHistGen[part]->Draw("e0");
+      fHistGen[part]->Write();
+
+      canvasMC[part]->cd(2);
+      setPadOptions(false);
+      setHistGraphics(fhistoPt1DTrue[part], false);
+      fhistoPt1DTrue[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dp_{T}");
+      fhistoPt1DTrue[part]->SetTitle("Selected true "+NamePart[part]+ " Yield");
+      fhistoPt1DTrue[part]->Draw("e0");
+      fhistoPt1DTrue[part]->Write();
+
+      canvasMC[part]->cd(3);
+      setPadOptions(false);
+      setHistGraphics(fHistEff[part], false);
+      fHistEff[part]->GetYaxis()->SetRangeUser(0,1.);
+      fHistEff[part]->SetTitle("Efficiency "+NamePart[part]);
+      fHistEff[part]->Draw("e0");
+      fHistEff[part]->Write();
+
+      canvasMC[part]->SaveAs(PathOut+".pdf");
+
+    }
+    
+    fHistMean[part] = new TH1F("Mean_"+NamePart[part], "Mean_"+NamePart[part], numPt-1, PtVector);
+    fHistSigma[part] = new TH1F("Sigma_"+NamePart[part], "Sigma_"+NamePart[part], numPt-1, PtVector);
+    fHistYield[part] = new TH1F("Yield_"+NamePart[part], "Yield_"+NamePart[part], numPt-1, PtVector);
+    fHistSSB[part] = new TH1F("Purity_"+NamePart[part], "Purity_"+NamePart[part], numPt-1, PtVector);
+    fHistYield[part]->Sumw2();
+    
+    canvasMass[part] = new TCanvas (Form("canvasMass%i", part), NamehistoInvMass[part], 1200, 800);
+    canvasMassvsPt[part] = new TCanvas (Form("canvasMassPt%i", part), NamehistoInvMass[part], 1200, 800);
+    canvasMassvsPt[part]->Divide(3,2);
+    canvasResultsvsPt[part] = new TCanvas (Form("canvasResults%i", part), NamePart[part], 1200, 800);
+    canvasResultsvsPt[part]->Divide(4,1);
+    
+    if (part<3) {
+      fhistoInvMass2D[part] = (TH2F*)dirV0->Get(NamehistoInvMass[part]);
+    } else {
+      fhistoInvMass2D[part] = (TH2F*)dirCasc->Get(NamehistoInvMass[part]);
+    }
+    if (!fhistoInvMass2D[part]) continue;
+
+    //Fit loop
+    cout << "Processing fits" << endl;
+    for (Int_t pt=0; pt<numPt; pt++){
+      fhistoInvMass1D[part][pt] = (TH1F*)fhistoInvMass2D[part]->ProjectionY(NamehistoInvMass[part]+Form("1D_Pt%i", pt), fhistoInvMass2D[part]->GetXaxis()->FindBin(NPt[pt][0]+0.0001), fhistoInvMass2D[part]->GetXaxis()->FindBin(NPt[pt][1]-0.0001));
+      fhistoInvMass1D[part][pt]->SetTitle(NamehistoInvMass[part]+ " "+SPt[pt]+ " GeV/c");
+
+      (pt) ? canvasMassvsPt[part]->cd(pt) : canvasMass[part]->cd();
+      setPadOptions(false);
+      if (pt && ((SkipCascFits==1 && part>4) || (SkipCascFits==2 && part>2))) {
+        fhistoInvMass1D[part][pt]->Draw();
+        continue;
+      }
+      // Fit the invariant mass with gaussian + pol
+      gauss[part][pt] = new TF1("gauss_"+NamePart[part]+Form("_Pt%i", pt), "gaus", min_range_signal[part], max_range_signal[part]);
+      gauss[part][pt]->SetLineColor(kRed);   
+      gauss[part][pt]->SetParName(0, "norm");
+      gauss[part][pt]->SetParName(1, "mean");
+      gauss[part][pt]->SetParName(2, "sigma");
+      gauss[part][pt]->SetParameters(1., MassPart[part], 0.0002);
+      gauss[part][pt]->SetParLimits(0, 0., 1.1*fhistoInvMass1D[part][pt]->GetBinContent(fhistoInvMass1D[part][pt]->GetMaximumBin()));
+      gauss[part][pt]->SetParLimits(1, min_range_signal[part], max_range_signal[part]);
+      gauss[part][pt]->SetParLimits(2, 0.0001, 0.05);
+
+      bkgparab[part][pt] = new TF1("parab_"+NamePart[part]+Form("_Pt%i", pt), fparab, liminf[part], limsup[part], 4);
+      bkgparab[part][pt]->SetLineColor(kGreen);
+      bkgparab[part][pt]->FixParameter(3, part);
+
+      total[part][pt] = new TF1("total_"+NamePart[part]+Form("_Pt%i", pt), "gaus(0)+pol2(3)", liminf[part], limsup[part]);
+      total[part][pt]->SetLineColor(kAzure); 
+      total[part][pt]->SetParName(0, "norm");
+      total[part][pt]->SetParName(1, "mean");
+      total[part][pt]->SetParName(2, "sigma");
+      total[part][pt]->SetParName(3, "p0");
+      total[part][pt]->SetParName(4, "p1");
+      total[part][pt]->SetParName(5, "p2");
+
+      total[part][pt]->SetParameters(1., MassPart[part], 0.0002);
+      total[part][pt]->SetParLimits(0, 0., 1.1*fhistoInvMass1D[part][pt]->GetBinContent(fhistoInvMass1D[part][pt]->GetMaximumBin()));
+      total[part][pt]->SetParLimits(1, min_range_signal[part], max_range_signal[part]);
+      total[part][pt]->SetParLimits(2, 0.0001, 0.05);
+      fhistoInvMass1D[part][pt]->Fit(gauss[part][pt], "R0Q");
+      fhistoInvMass1D[part][pt]->Fit(bkgparab[part][pt], "R0Q");
+
+      gauss[part][pt]->GetParameters(&parGaussParab[part][pt][0]);
+      bkgparab[part][pt]->GetParameters(&parGaussParab[part][pt][3]);
+      total[part][pt]->SetParameters(parGaussParab[part][pt]);
+
+      fFitResultPtr0[part][pt] = fhistoInvMass1D[part][pt]->Fit(total[part][pt],"SRB+Q");
+      if (fFitResultPtr0[part][pt] < 0.) continue;//AIMERICcondition in case fFitResultPtr0[part][pt] is empty
+      fhistoInvMass1D[part][pt]->GetXaxis()->SetTitle("inv. mass (GeV/c^{2})");
+      fhistoInvMass1D[part][pt]->GetYaxis()->SetTitle("Counts");
+      fhistoInvMass1D[part][pt]->DrawCopy("same");
+
+      if(!pt) {
+        TLatex parValues; 
+        parValues.DrawLatexNDC(0.585, 0.8, Form("#scale[0.65]{#mu = (%.7f #pm %.7f) GeV/c^{2}}", total[part][pt]->GetParameter(1), total[part][pt]->GetParError(1)));
+        parValues.DrawLatexNDC(0.585, 0.75, Form("#scale[0.65]{#sigma = (%.7f #pm %.7f) GeV/c^{2}}", total[part][pt]->GetParameter(2), total[part][pt]->GetParError(2)));
+        checkBoundaries(total[part][pt]->GetParameter(1), (1.-MassPartLimits[part])*MassPart[part], (1.+MassPartLimits[part])*MassPart[part], total[part][pt]->GetParameter(2), WidthPartLimits[0][part], WidthPartLimits[1][part], cutCheckLabels);
+
+        continue;
+      }
+      totalbis[part][pt] = (TF1*)total[part][pt]->Clone("totalbis_"+NamePart[part]+Form("_Pt%i", pt));
+      fFitResultPtr1[part][pt] = fFitResultPtr0[part][pt];
+      total[part][pt]->FixParameter(3,0);
+      total[part][pt]->FixParameter(4,0);
+      total[part][pt]->FixParameter(5,0);
+      totalbis[part][pt]->FixParameter(0,0);
+      totalbis[part][pt]->FixParameter(1,0);
+      totalbis[part][pt]->FixParameter(2,0);
+
+      Mean[part][pt] = total[part][pt]->GetParameter(1);
+      ErrMean[part][pt] = total[part][pt]->GetParError(1);
+      Sigma[part][pt] = total[part][pt]->GetParameter(2);
+      ErrSigma[part][pt] = total[part][pt]->GetParError(2);
+
+      // Comput yields and Purity
+      IntegralS[part][pt] = total[part][pt]->Integral(Mean[part][pt]-3*Sigma[part][pt], Mean[part][pt]+3*Sigma[part][pt]);
+      IntegralB[part][pt] = totalbis[part][pt]->Integral(Mean[part][pt]-3*Sigma[part][pt], Mean[part][pt]+3*Sigma[part][pt]);
+      sigmas[part][pt] = total[part][pt]->IntegralError(Mean[part][pt]-3*Sigma[part][pt], Mean[part][pt]+3*Sigma[part][pt], fFitResultPtr0[part][pt]->GetParams(), (fFitResultPtr0[part][pt]->GetCovarianceMatrix()).GetMatrixArray());
+      sigmab[part][pt] = totalbis[part][pt]->IntegralError(Mean[part][pt]-3*Sigma[part][pt], Mean[part][pt]+3*Sigma[part][pt], fFitResultPtr1[part][pt]->GetParams(), (fFitResultPtr1[part][pt]->GetCovarianceMatrix()).GetMatrixArray()); 
+
+      YieldS[part][pt] = IntegralS[part][pt]/fhistoInvMass1D[part][pt]->GetBinWidth(1);
+      YieldB[part][pt] = IntegralB[part][pt]/fhistoInvMass1D[part][pt]->GetBinWidth(1);
+      ErrYieldS[part][pt] = sigmas[part][pt]/fhistoInvMass1D[part][pt]->GetBinWidth(1);
+      ErrYieldB[part][pt] = sigmab[part][pt]/fhistoInvMass1D[part][pt]->GetBinWidth(1);
+      
+      for (Int_t b=fhistoInvMass1D[part][pt]->GetXaxis()->FindBin(Mean[part][pt]-3*Sigma[part][pt]); b<=fhistoInvMass1D[part][pt]->GetXaxis()->FindBin(Mean[part][pt]+3*Sigma[part][pt]); b++){
+        SPlusB[part][pt] += fhistoInvMass1D[part][pt]->GetBinContent(b);
+      }
+     
+      SSB[part][pt] = YieldS[part][pt]/SPlusB[part][pt];
+      ErrSSB[part][pt] = SSB[part][pt]*sqrt(pow(ErrYieldS[part][pt]/YieldS[part][pt],2)+1./SPlusB[part][pt]);
+
+      YieldSNotScaled[part][pt] = YieldS[part][pt];
+      YieldBNotScaled[part][pt] = YieldB[part][pt];
+      
+      YieldS[part][pt] = YieldS[part][pt]/fHistYield[part]->GetBinWidth(pt+1)/NEvents;
+      YieldB[part][pt] = YieldB[part][pt]/fHistYield[part]->GetBinWidth(pt+1)/NEvents;
+      ErrYieldS[part][pt] = ErrYieldS[part][pt]/fHistYield[part]->GetBinWidth(pt+1)/NEvents;      
+      ErrYieldB[part][pt] = ErrYieldB[part][pt]/fHistYield[part]->GetBinWidth(pt+1)/NEvents;
+      
+      fHistMean[part]->SetBinContent(pt, Mean[part][pt]);
+      fHistMean[part]->SetBinError(pt, ErrMean[part][pt]);
+      fHistSigma[part]->SetBinContent(pt, Sigma[part][pt]);
+      fHistSigma[part]->SetBinError(pt, ErrSigma[part][pt]);
+      fHistYield[part]->SetBinContent(pt, YieldS[part][pt]);
+      fHistYield[part]->SetBinError(pt, ErrYieldS[part][pt]);
+      fHistSSB[part]->SetBinContent(pt, SSB[part][pt]);
+      fHistSSB[part]->SetBinError(pt, ErrSSB[part][pt]);
+
+    }
+    
+    canvasMass[part]->SaveAs(PathOut+".pdf");
+    canvasMassvsPt[part]->SaveAs(PathOut+".pdf");
+    if ((SkipCascFits==1 && part>4) || (SkipCascFits==2 && part>2)) continue;
+
+    fHistMean[part]->Write();
+    fHistSigma[part]->Write();
+    fHistYield[part]->Write();
+    fHistSSB[part]->Write();
+    
+    //Plot mass mean value, width and yields and check their values
+    setHistGraphics(fHistMean[part], false);    
+    fHistMean[part]->GetYaxis()->SetTitle("#mu (GeV/c^{2})");
+    setHistGraphics(fHistSigma[part], false);
+    fHistSigma[part]->GetYaxis()->SetTitle("#sigma (GeV/c^{2})");
+    setHistGraphics(fHistYield[part], false);
+    fHistYield[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dp_{T}");
+    setHistGraphics(fHistSSB[part], false);
+    fHistSSB[part]->GetYaxis()->SetTitle("S/(S+B)");
+    
+    canvasResultsvsPt[part]->cd(1);
+    setPadOptions(false);
+    if (!CheckOldPass) {
+      fHistMean[part]->GetYaxis()->SetRangeUser((1.-2*MassPartLimits[part])*MassPart[part], (1.+2*MassPartLimits[part])*MassPart[part]);
+      fHistMean[part]->Draw("e");
+    } else {
+      TH1F *fHistMean_old = (TH1F*)f_old->Get("Mean_"+NamePart[part]);
+      setHistGraphics(fHistMean_old, true);    
+      TRatioPlot *rp = new TRatioPlot(fHistMean[part], fHistMean_old);
+      rp->SetH1DrawOpt("e");
+      rp->Draw();
+      rp->GetLowerRefGraph()->GetYaxis()->SetRangeUser(0.98, 1.02);
+      ((TH1F*) rp->GetUpperRefObject())->GetYaxis()->SetRangeUser((1.-2*MassPartLimits[part])*MassPart[part], (1.+2*MassPartLimits[part])*MassPart[part]);
+      rp->GetUpperPad()->cd();
+    }
+    TLine PDG_mass = TLine(NPt[0][0],MassPart[part],NPt[0][1],MassPart[part]);
+    TLine PDG_mass_Limits[2] = {TLine(NPt[0][0],(1.-MassPartLimits[part])*MassPart[part],NPt[0][1],(1.-MassPartLimits[part])*MassPart[part]), TLine(NPt[0][0],(1.+MassPartLimits[part])*MassPart[part],NPt[0][1],(1.+MassPartLimits[part])*MassPart[part])};
+    PDG_mass.SetLineColor(kBlack);
+    PDG_mass.SetLineStyle(2);
+    PDG_mass.Draw("same");
+    for(int iLim=0; iLim<2; iLim++) {
+      PDG_mass_Limits[iLim].SetLineColor(kBlack);
+      PDG_mass_Limits[iLim].SetLineStyle(1);
+      PDG_mass_Limits[iLim].Draw("same");
+    }
+    checkBoundaries(fHistMean[part], (1.-MassPartLimits[part])*MassPart[part], (1.+MassPartLimits[part])*MassPart[part], cutCheckLabels);
+
+    canvasResultsvsPt[part]->cd(2);
+    setPadOptions(false);
+    if (!CheckOldPass) {
+      fHistSigma[part]->GetYaxis()->SetRangeUser(0., WidthPartLimits[1][part]+0.005);
+      fHistSigma[part]->Draw("e");
+    } else {
+      TH1F *fHistSigma_old = (TH1F*)f_old->Get("Sigma_"+NamePart[part]);
+      setHistGraphics(fHistSigma_old, true);    
+      TRatioPlot *rp = new TRatioPlot(fHistSigma[part], fHistSigma_old);
+      rp->SetH1DrawOpt("e");
+      rp->Draw();
+      rp->GetLowerRefGraph()->GetYaxis()->SetRangeUser(0.8, 1.2);
+      ((TH1F*) rp->GetUpperRefObject())->GetYaxis()->SetRangeUser(0., WidthPartLimits[1][part]+0.005);
+      rp->GetUpperPad()->cd();
+      TLegend* leg = new TLegend(0.50, 0.63, 0.8, 0.73);
+      leg->SetBorderSize(0);
+      leg->SetTextSize(0.04);
+      leg->AddEntry(fHistSigma[part], pass_names[1], "PE");
+      leg->AddEntry(fHistSigma_old, pass_names[0], "PE");
+      leg->Draw();
+    }
+    
+    TLine Width_Limits[2] = {TLine(NPt[0][0],WidthPartLimits[0][part],NPt[0][1],WidthPartLimits[0][part]), TLine(NPt[0][0],WidthPartLimits[1][part],NPt[0][1],WidthPartLimits[1][part])};
+    for(int iLim=0; iLim<2; iLim++) {
+      Width_Limits[iLim].SetLineColor(kBlack);
+      Width_Limits[iLim].SetLineStyle(1);
+      Width_Limits[iLim].Draw("same");
+    }
+    checkBoundaries(fHistSigma[part], WidthPartLimits[0][part], WidthPartLimits[1][part], cutCheckLabels);
+
+    canvasResultsvsPt[part]->cd(3);
+    setPadOptions(false);
+    if (!CheckOldPass) {
+      fHistYield[part]->Draw("e");
+    } else {
+      TH1F *fHistYield_old = (TH1F*)f_old->Get("Yield_"+NamePart[part]);
+      setHistGraphics(fHistYield_old, true);    
+      TRatioPlot *rp = new TRatioPlot(fHistYield[part], fHistYield_old);
+      rp->SetH1DrawOpt("e");
+      std::vector<double> lines = {0.5, 1., 1.5, 2.};
+      rp->SetGridlines(lines);
+      rp->Draw();
+      rp->GetLowerRefGraph()->GetYaxis()->SetRangeUser(0.5, 2.);
+      ((TH1F*) rp->GetUpperRefObject())->GetYaxis()->SetRangeUser(0., 1.1*findMaxValue(fHistYield[part], fHistYield_old));
+      rp->GetUpperPad()->cd();
+    }
+
+    canvasResultsvsPt[part]->cd(4);
+    setPadOptions(false);
+    if (!CheckOldPass) {
+      fHistSSB[part]->GetYaxis()->SetRangeUser(0., 1.);
+      fHistSSB[part]->Draw("e");
+    } else {
+      TH1F *fHistSSB_old = (TH1F*)f_old->Get("SSB_"+NamePart[part]);
+      setHistGraphics(fHistSSB_old, true);    
+      TRatioPlot *rp = new TRatioPlot(fHistSSB[part], fHistSSB_old);
+      rp->SetH1DrawOpt("e");
+      std::vector<double> lines = {0.5, 1., 1.5, 2.};
+      rp->SetGridlines(lines);
+      rp->Draw();
+      rp->GetLowerRefGraph()->GetYaxis()->SetRangeUser(0.5, 2.);
+      ((TH1F*) rp->GetUpperRefObject())->GetYaxis()->SetRangeUser(0., 1.1*findMaxValue(fHistSSB[part], fHistSSB_old));
+      rp->GetUpperPad()->cd();
+    }
+    
+    canvasResultsvsPt[part]->SaveAs(PathOut+".pdf");
+
+  }
+
+  //draw ratio between particle and antiparticle yields
+  TCanvas *canvasRatioYieldsPAntiP;
+  canvasRatioYieldsPAntiP = new TCanvas ("canvasRatioYieldsPAntiP", "Ratio particle/antiparticle yields", 1200, 800);
+  if (SkipCascFits!=2) canvasRatioYieldsPAntiP->Divide(3-SkipCascFits,1);
+  TH1F *fHistRatioYields[3];
+  TString NameRatioPart[3] = {"Lambda", "Xi", "Omega"};
+  Float_t RatioLowerBound[3]={0.75, 0.85, 0.85};
+  Float_t RatioUpperBound[3]={1.1, 1.1, 1.1};
+  TLine *LineOne = new TLine(0.5 ,1 ,10 ,1);
+  
+  for (Int_t i=0; i<3; i++){
+
+    if ((SkipCascFits==1 && i>1) || (SkipCascFits==2 && i>0)) continue;
+    if (i!=0){
+      fHistRatioYields[i] = (TH1F*) fHistYield[2*i+1]->Clone("fHistYieldRatio_"+NameRatioPart[i]);
+      fHistRatioYields[i]->Divide(fHistYield[2*i+2]);
+      fHistRatioYields[i]->SetTitle("yield ratio "+NamePart[2*i+1]+"/"+NamePart[2*i+2]);
+    }
+    else {
+      fHistRatioYields[i] = (TH1F*) fHistYield[2*i+2]->Clone("fHistYieldRatio_"+NameRatioPart[i]);
+      fHistRatioYields[i]->Divide(fHistYield[2*i+1]);
+      fHistRatioYields[i]->SetTitle("yield ratio "+NamePart[2*i+2]+"/"+NamePart[2*i+1]);
+    }
+    canvasRatioYieldsPAntiP->cd(i+1);
+    fHistRatioYields[i]->SetLineColor(628);
+    fHistRatioYields[i]->SetMarkerColor(628);
+    fHistRatioYields[i]->GetYaxis()->SetRangeUser(0.7, 1.2);
+    fHistRatioYields[i]->GetYaxis()->SetTitle("Ratio");
+    fHistRatioYields[i]->Draw("e");
+    //  checkBoundaries(fHistRatioYields[i], RatioLowerBound[i], RatioUpperBound[i], cutCheckLabels);
+    LineOne->Draw("same");
+    setPadOptions(false);
+  }
+  canvasRatioYieldsPAntiP->SaveAs(PathOut+".pdf)");
+  
+  f_out->Close();
+  cout << "Mission accomplished! " << endl;
+  
+}
+
+void checkExactLimit(TH1F *lHist, Float_t limit, bool isMinLimit, TLatex labels[]) {
+  Int_t lastbin  = lHist->GetNbinsX();
+  Float_t binEdge = 0;
+  if(isMinLimit) {
+    for (Int_t i = 1; i < lastbin; i++) {
+      if (lHist->GetBinContent(i) != 0) break; 
+      binEdge = lHist->GetBinLowEdge(i+1);
+    }
+  } else {
+    for (Int_t i = lastbin; i >= 0; i--) {
+      if (lHist->GetBinContent(i) != 0) break;  
+      binEdge = lHist->GetBinLowEdge(i);
+    }
+  }
+  if(binEdge < limit) {
+    isMinLimit ? labels[2].Draw() : labels[1].Draw();
+    isMinLimit ? labels[4].Draw() : labels[3].Draw();
+  } else if(binEdge > limit) {
+    isMinLimit ? labels[1].Draw() : labels[2].Draw();
+    isMinLimit ? labels[3].Draw() : labels[4].Draw();
+  } else {
+    labels[0].Draw();
+  }
+}
+void checkIntervalWidth(TH1F *lHist, float width, TLatex labels[]) {
+  Int_t lastbin  = lHist->GetNbinsX();
+  Float_t binEdges[2] = {0., 0.};
+  for (Int_t i = 1; i < lastbin; i++) {
+    if (lHist->GetBinContent(i) != 0) break; 
+    binEdges[0] = lHist->GetBinLowEdge(i+1);
+  }
+  for (Int_t i = lastbin; i >= 0; i--) {
+    if (lHist->GetBinContent(i) != 0) break;  
+    binEdges[1] = lHist->GetBinLowEdge(i);
+  }
+  if(binEdges[1]-binEdges[0] > width+lHist->GetBinWidth(1)+0.000001) {
+    labels[2].Draw();
+    labels[4].Draw();
+  } else if(binEdges[1]-binEdges[0] < width) {
+    labels[1].Draw();
+    labels[3].Draw();
+  } else {
+    labels[0].Draw();
+  }
+}
+void checkBoundaries(TH1F *lHist, Float_t lower_bound, Float_t upper_bound, TLatex labels[]) {
+  bool isOk = true;
+  Int_t lastbin  = lHist->GetNbinsX();
+  Float_t content = 0;
+  for (Int_t i = 1; i <= lastbin; i++) {
+    content = lHist->GetBinContent(i);
+    if (content>=lower_bound && content<=upper_bound) continue; 
+    isOk = false;
+    break;
+  }
+  
+  if(isOk) {
+    labels[0].Draw();
+  } else {
+    labels[5].Draw();
+    labels[6].Draw();
+  } 
+}
+void checkBoundaries(Float_t value1, Float_t lower_bound1, Float_t upper_bound1, Float_t value2, Float_t lower_bound2, Float_t upper_bound2, TLatex labels[]) {
+  if(value1>lower_bound1 && value1<upper_bound1 && value2>lower_bound2 && value2<upper_bound2) {
+    labels[7].Draw();
+  } else {
+    labels[5].Draw();
+  }
+}
+void setPadOptions(bool useLogY = false) {
+  if (useLogY) gPad->SetLogy();
+  gPad->SetLeftMargin(0.18);
+  gPad->SetRightMargin(0.18);
+}
+void setHistGraphics(TH1F *lHist, bool isOldPass) {
+  isOldPass ? lHist->SetLineColor(kBlue) : lHist->SetLineColor(kRed);
+  isOldPass ? lHist->SetMarkerColor(kBlue) : lHist->SetMarkerColor(kRed);
+  lHist->SetMarkerStyle(33);
+  lHist->GetXaxis()->SetTitle("p_{T} (GeV/c)");
+  lHist->GetXaxis()->SetTitleSize(0.05);
+  lHist->GetYaxis()->SetTitleSize(0.05);
+}
+float findMaximum(TH1F *lHist, float width = 3.) {
+  lHist->GetXaxis()->SetRange(lHist->GetXaxis()->FindBin(-width), lHist->GetXaxis()->FindBin(width));
+  float max = lHist->GetXaxis()->GetBinCenter(lHist->GetMaximumBin());
+  TLine *ar1 = new TLine(0.5, 1000000, 0.5, 0.);
+  TLine *lineMax = new TLine(max, 0., max, lHist->GetMaximum());
+  lineMax->SetLineStyle(kDashed);
+  lineMax->Draw();
+  return max;
+} 
+float findMaxValue(TH1F *lHist1, TH1F *lHist2) {
+  float max1 = lHist1->GetMaximum();
+  float max2 = lHist2->GetMaximum();
+  return max1>max2 ? max1 : max2;
+}
+
+Double_t SetEfficiencyError(Int_t k, Int_t n){
+  return sqrt(((Double_t)k+1)*((Double_t)k+2)/(n+2)/(n+3) - pow((Double_t)(k+1),2)/pow(n+2,2));
+}
