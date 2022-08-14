@@ -46,15 +46,15 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
                       Int_t SkipCascFits = 0, // 0 = don't skip, 1 = skip Omegas, 2 = skip all cascades
                       Bool_t TopologyOnly = false, // true = only topology analysis, false = complete analysis
                       Float_t yRangeGen = 0.5, //rapidity range of generated particles 
-                      TString PathIn  = "../AnalysisResults_AO2D_Test.root"/*"../results/mc/AOD/LHC20f5b_AOD235/AnalysisResults.root"*/, // input file name
-		                  TString PathOut = "TestQAInO2"/*"../results/mc/AOD/LHC20f5b_AOD235/PostProcessLHC20f5_AOD235"*/,                     // output file name
+                      TString PathIn  = "../Run3QA/LHC22d_pp/AnalysisResults_qa_LHC22d_apass1.root", // input file name
+		                  TString PathOut = "../Run3QA/LHC22d_pp/PostProcessing_LHC22d_apass1",                     // output file name
                       Bool_t CheckOldPass = false,                                                // true to compare two passes
                       TString OldPassPath = ".."                  // input/output file name (old pass to be compared with)
                       ) {
   // Define pass names
   TString pass_names[2] = {"pass1", "pass3"};
   // Define text
-  TLatex cutCheckLabels[8] = {TLatex(0.35,0.8,"#scale[0.8]{#color[3]{BOUNDARIES: OK!!}}"), TLatex(0.2,0.7,"#scale[0.8]{#color[2]{TIGHTER CUT WRT EXPECTED!!}}"), TLatex(0.2,0.7,"#scale[0.8]{#color[42]{LOOSER CUT WRT EXPECTED!!}}"), TLatex(0.2,0.63,"#scale[0.8]{#color[2]{PROBLEM FOR ANALYSIS}}"), TLatex(0.2,0.63,"#scale[0.8]{#color[42]{NOT AN ISSUE FOR ANALYSIS}}"), TLatex(0.3,0.8,"#scale[0.8]{#color[42]{OUTSIDE BOUNDARIES!!}}"), TLatex(0.3,0.77,"#scale[0.8]{#color[42]{PLEASE CHECK.}}"), TLatex(0.35,0.8,"#scale[0.8]{#color[3]{OK!!}}")};
+  TLatex cutCheckLabels[8] = {TLatex(0.35,0.8,"#scale[0.8]{#color[3]{BOUNDARIES: OK!!}}"), TLatex(0.2,0.7,"#scale[0.8]{#color[2]{TIGHTER CUT WRT EXPECTED!!}}"), TLatex(0.2,0.7,"#scale[0.8]{#color[42]{LOOSER CUT WRT EXPECTED!!}}"), TLatex(0.2,0.63,"#scale[0.8]{#color[2]{PROBLEM FOR ANALYSIS}}"), TLatex(0.2,0.63,"#scale[0.8]{#color[42]{NOT AN ISSUE FOR ANALYSIS}}"), TLatex(0.3,0.8,"#scale[0.8]{#color[42]{OUTSIDE BOUNDARIES!!}}"), TLatex(0.3,0.75,"#scale[0.8]{#color[42]{PLEASE CHECK.}}"), TLatex(0.35,0.8,"#scale[0.8]{#color[3]{OK!!}}")};
   for(int i=0; i<8; i++) {cutCheckLabels[i].SetNDC();}
   TFile *f = new TFile(PathIn, "");
   if (!f) {
@@ -127,8 +127,10 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   TString TopVarV0[NTopV0variables] = {"V0 DCA Pos. To PV", "V0 DCA Neg. To PV", "V0 DCA V0 Daughters", "#it{cos}#theta_{PA}", "#it{R}"};
   TString TopVarV0Unit[NTopV0variables] = {"(cm)", "(cm)", "(#sigma)", "", "(cm)"};
   float TopVarV0Cuts[NTopV0variables];
-  const float TopVarV0CutsPbPb[NTopV0variables] = {0.1, 0.1, 1.4, 0.95, 0.9};
-  const float TopVarV0Cutspp[NTopV0variables] = {0.03, 0.03, 2, 0.95, 0.9};
+  const float TopVarV0CutsPbPbRun2[NTopV0variables] = {0.1, 0.1, 1.4, 0.95, 0.9}; //Run 2
+  const float TopVarV0CutsPbPb[NTopV0variables] = {0.1, 0.1, 2, 0.9, 0.5}; //Run 3 --> Fix third element (DCAV0Daughters) I do not find value of parameter in SVertexerParams
+  const float TopVarV0CutsppRun2[NTopV0variables] = {0.03, 0.03, 2, 0.95, 0.9}; //Run 2
+  const float TopVarV0Cutspp[NTopV0variables] = {0.1, 0.1, 2, 0.9, 0.5}; //Run 3
   for (Int_t i=0; i<NTopV0variables; i++){
     if (CollType=="PbPb") TopVarV0Cuts[i] = TopVarV0CutsPbPb[i];
     else  TopVarV0Cuts[i] = TopVarV0Cutspp[i];
@@ -138,8 +140,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     fHistTopV0[var] = (TH1F*)dirV0->Get(TopVarV0Input[var]);
     if (!fHistTopV0[var]) {cout << "Histo " << TopVarV0Input[var] << " with topo variables of V0 not found" << endl; return;}
     fHistTopV0[var]->Scale(1./NEvents);
-    //fHistTopV0[var]->GetYaxis()->SetRangeUser(0.1*fHistTopV0[var]->GetMinimum(1.e-10), 10*fHistTopV0[var]->GetMaximum());
-    fHistTopV0[var]->GetYaxis()->SetRangeUser(10e-4, 10*fHistTopV0[var]->GetMaximum());
+    fHistTopV0[var]->GetYaxis()->SetRangeUser(0.1*fHistTopV0[var]->GetMinimum(1.e-10), 10*fHistTopV0[var]->GetMaximum());
     fHistTopV0[var]->SetTitle(TopVarV0[var]);
     fHistTopV0[var]->GetXaxis()->SetTitle(TopVarV0[var] + " " + TopVarV0Unit[var]);
     fHistTopV0[var]->GetYaxis()->SetTitle("1/N_{ev} Counts");
@@ -218,16 +219,25 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
 
   // Define pt binning
   const Int_t numPt = 7;
+  
   Float_t NPt[numPt][2] = {{0., 10.}, {0., 1.}, {1., 2.}, {2., 3.}, {3., 4.}, {4., 6.}, {6., 10.}};
   TString SPt[numPt] = {"0.0-10.0", "0.0-1.0", "1.0-2.0", "2.0-3.0", "3.0-4.0", "4.0-6.0", "6.0-10.0"};
   Float_t PtVector[numPt] = {0., 1., 2., 3., 4., 6., 10.};
   
+  //Low stat binning 
+  /*
+  Float_t NPt[numPt][2] = {{0., 4.}, {0., 0.4}, {0.4, 0.8}, {0.8, 1.4}, {1.4, 2.2}, {2.2, 3.0}, {3., 4.}};
+  TString SPt[numPt] = {"0.0-4.0", "0.0-0.4", "0.4-0.8", "0.8-1.4", "1.4-2.2", "2.2, 3.0", "3.0-4.0"};
+  Float_t PtVector[numPt] = {0., 0.4, 0.8, 1.4, 2.2, 3.0, 4.0};
+  
+  Float_t NPt[numPt][2] = {{0., 4.}, {0., 0.4}, {0.4, 0.8}, {0.8, 1.0}, {1.0, 1.2}, {1.2, 1.4}, {1.4, 2.2}};
+  TString SPt[numPt] = {"0.0-4.0", "0.0-0.4", "0.4-0.8", "0.8-1.0", "1.0-1.2", "1.2, 1.4", "1.4-2.2"};
+  Float_t PtVector[numPt] = {0., 0.4, 0.8, 1.0, 1.2, 1.4, 2.2};
+  */
+
   // dE/dx measurements of lambda daughters
   cout << "Processing lambda daughters" << endl;
-  NPt[0][0]=0.4; 
-  NPt[1][0]=0.4; 
-  SPt[0]="0.4-10.0";
-  SPt[1]="0.4-1.0";
+
   const int nDaughters = 2;
   TString LambdaDaugters[nDaughters] = {"#pi", "p"};
   TString LambdaDaugtersLong[nDaughters] = {"Pion", "Proton"};
@@ -318,8 +328,6 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       NPt[0][0]=0.; 
       NPt[1][0]=0.; 
       PtVector[0]=0.;
-      SPt[0]="0.0-10.0";
-      SPt[1]="0.0-1.0";
     }
     else if (part==1 || part==2) {
       NPt[0][0]=0.4; 
@@ -397,6 +405,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
 	      fHistEff[part]->SetBinError(b,SetEfficiencyError(fhistoPt1DTrue[part]->GetBinContent(b), fHistGen[part]->GetBinContent(b)));
       }
 
+      fHistEff[part]->GetXaxis()->SetRangeUser(PtVector[1], PtVector[numPt-1]);
       fhistoPt1DTrue[part]->Scale(1./NEvents/fhistoPt1DTrue[part]->GetBinWidth(1));
       fHistGen[part]->Scale(1./NEvents/fHistGen[part]->GetBinWidth(1));
       
@@ -438,7 +447,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     canvasMassvsPt[part] = new TCanvas (Form("canvasMassPt%i", part), NamehistoInvMass[part], 1200, 800);
     canvasMassvsPt[part]->Divide(3,2);
     canvasResultsvsPt[part] = new TCanvas (Form("canvasResults%i", part), NamePart[part], 1200, 800);
-    canvasResultsvsPt[part]->Divide(4,1);
+    canvasResultsvsPt[part]->Divide(2,2);
     
     if (part<3) {
       fhistoInvMass2D[part] = (TH2F*)dirV0->Get(NamehistoInvMass[part]);
@@ -581,7 +590,8 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     canvasResultsvsPt[part]->cd(1);
     setPadOptions(false);
     if (!CheckOldPass) {
-      fHistMean[part]->GetYaxis()->SetRangeUser((1.-2*MassPartLimits[part])*MassPart[part], (1.+2*MassPartLimits[part])*MassPart[part]);
+      //fHistMean[part]->GetYaxis()->SetRangeUser((1.-2*MassPartLimits[part])*MassPart[part], (1.+2*MassPartLimits[part])*MassPart[part]);
+      fHistMean[part]->GetYaxis()->SetRangeUser((1.-5*MassPartLimits[part])*MassPart[part], (1.+5*MassPartLimits[part])*MassPart[part]);
       fHistMean[part]->Draw("e");
     } else {
       TH1F *fHistMean_old = (TH1F*)f_old->Get("Mean_"+NamePart[part]);
@@ -786,8 +796,8 @@ void checkBoundaries(Float_t value1, Float_t lower_bound1, Float_t upper_bound1,
 }
 void setPadOptions(bool useLogY = false) {
   if (useLogY) gPad->SetLogy();
-  gPad->SetLeftMargin(0.18);
-  gPad->SetRightMargin(0.18);
+  gPad->SetLeftMargin(0.12);
+  gPad->SetRightMargin(0.08);
 }
 void setHistGraphics(TH1F *lHist, bool isOldPass) {
   isOldPass ? lHist->SetLineColor(kBlue) : lHist->SetLineColor(kRed);
