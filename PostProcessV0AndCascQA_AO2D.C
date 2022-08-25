@@ -42,12 +42,12 @@ float findMaximum(TH1F *lHist, float width);
 float findMaxValue(TH1F *lHist1, TH1F *lHist2);
 Double_t SetEfficiencyError(Int_t k, Int_t n);
   
-void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int_t RebinTPC=0,
+void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=true, Int_t RebinTPC=0,
                       Int_t SkipCascFits = 0, // 0 = don't skip, 1 = skip Omegas, 2 = skip all cascades
                       Bool_t TopologyOnly = false, // true = only topology analysis, false = complete analysis
                       Float_t yRangeGen = 0.5, //rapidity range of generated particles 
-                      TString PathIn  = "../Run3QA/LHC22d_pp/AnalysisResults_qa_LHC22d_apass1.root", // input file name
-		                  TString PathOut = "../Run3QA/LHC22d_pp/PostProcessing_LHC22d_apass1",                     // output file name
+                      TString PathIn  = "../Run3QA/LHC21k6_MC_pp/AnalysisResults_qaTrain32526_21k6.root", // input file name
+		                  TString PathOut = "../Run3QA/LHC21k6_MC_pp/PostProcessing_qaTrain32526_21k6",                     // output file name
                       Bool_t CheckOldPass = false,                                                // true to compare two passes
                       TString OldPassPath = ".."                  // input/output file name (old pass to be compared with)
                       ) {
@@ -126,12 +126,17 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   TString TopVarV0Input[NTopV0variables] = {"V0DCAPosToPV", "V0DCANegToPV", "V0DCAV0Daughters", "CosPA", "V0Radius"};
   TString TopVarV0[NTopV0variables] = {"V0 DCA Pos. To PV", "V0 DCA Neg. To PV", "V0 DCA V0 Daughters", "#it{cos}#theta_{PA}", "#it{R}"};
   TString TopVarV0Unit[NTopV0variables] = {"(cm)", "(cm)", "(#sigma)", "", "(cm)"};
+  float TopVarV0CutsRun2[NTopV0variables];
   float TopVarV0Cuts[NTopV0variables];
   const float TopVarV0CutsPbPbRun2[NTopV0variables] = {0.1, 0.1, 1.4, 0.95, 0.9}; //Run 2
-  const float TopVarV0CutsPbPb[NTopV0variables] = {0.1, 0.1, 2, 0.9, 0.5}; //Run 3 --> Fix third element (DCAV0Daughters) I do not find value of parameter in SVertexerParams
+  const float TopVarV0CutsPbPb[NTopV0variables] = {0.05, 0.05, 2, 0.9, 0.5}; //Run 3 --> Fix third element (DCAV0Daughters) I do not find value of parameter in SVertexerParams
   const float TopVarV0CutsppRun2[NTopV0variables] = {0.03, 0.03, 2, 0.95, 0.9}; //Run 2
-  const float TopVarV0Cutspp[NTopV0variables] = {0.1, 0.1, 2, 0.9, 0.5}; //Run 3
+  const float TopVarV0Cutspp[NTopV0variables] = {0.05, 0.05, 2, 0.9, 0.5}; //Run 3
+  TLine* SelLineRun2;
+  TLine* SelLine;
   for (Int_t i=0; i<NTopV0variables; i++){
+    if (CollType=="PbPb") TopVarV0CutsRun2[i] = TopVarV0CutsPbPbRun2[i];
+    else  TopVarV0CutsRun2[i] = TopVarV0CutsppRun2[i];
     if (CollType=="PbPb") TopVarV0Cuts[i] = TopVarV0CutsPbPb[i];
     else  TopVarV0Cuts[i] = TopVarV0Cutspp[i];
   }
@@ -146,6 +151,11 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     fHistTopV0[var]->GetYaxis()->SetTitle("1/N_{ev} Counts");
     canvasTopologyV0->cd(var+1);
     fHistTopV0[var]->DrawCopy("hist");
+    SelLineRun2 = new TLine( TopVarV0CutsRun2[var], fHistTopV0[var]->GetMinimum() ,  TopVarV0CutsRun2[var], fHistTopV0[var]->GetMaximum());
+    SelLineRun2->SetLineColor(kGray);
+    //SelLineRun2->DrawClone("same");
+    SelLine = new TLine( TopVarV0Cuts[var], fHistTopV0[var]->GetMinimum() ,  TopVarV0Cuts[var], fHistTopV0[var]->GetMaximum());
+    SelLine->DrawClone("same");
     checkExactLimit(fHistTopV0[var], TopVarV0Cuts[var], (var!=2) ? true : false, cutCheckLabels);
     setPadOptions(true);
     fHistTopV0[var]->Write();
@@ -163,10 +173,15 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   TString TopVarCascInput[NTopCascInput] = {"CascPt", "V0Ctau", "CascCosPA", "V0CosPA", "V0CosPAToXi", "CascRadius", "V0Radius", "InvMassLambdaDaughter", "DcaCascDaughters", "DcaV0Daughters", "DcaBachToPV", "DcaV0ToPV", "DcaPosToPV", "DcaNegToPV", "CascyXi", "CascCtauXi", "CascyOmega", "CascCtauOmega"};
   TString TopVarCasc[NTopCascVar] = {"Casc #it{p}_{T}", "V0 #it{c}#tau", "Casc #it{cos}#theta_{PA}", "V0 #it{cos}#theta_{PA}", "V0 #it{cos}#theta_{PA} To Casc", "Casc #it{R}", "V0 #it{R}", "#it{m}_{inv} #Lambda Daughter", "DCA Casc Daughters", "DCA V0 Daughters", "DCA Bach. To PV", "DCA V0 To PV", "DCA Pos. To PV", "DCA Neg. To PV", "#it{y}_{#Xi^{-}}", "#it{c}#tau_{ #Xi^{-}}", "#it{y}_{#Omega^{-}}", "#it{c}#tau_{ #Omega^{-}}", "#it{y}_{#Xi^{+}}", "#it{c}#tau_{ #Xi^{+}}", "#it{y}_{#Omega^{+}}", "#it{c}#tau_{ #Omega^{+}}"};
   TString TopVarCascUnit[NTopCascVar] = {"(GeV/#it{c})", "(cm)", "", "", "", "(cm)", "(cm)", "(GeV/#it{c}^2)", "(cm)", "(cm)", "(cm)", "(cm)", "(cm)", "(cm)", "", "(cm)", "", "(cm)", "", "(cm)", "", "(cm)"};
+  float TopVarCascCutsRun2[NTopCascVar];
   float TopVarCascCuts[NTopCascVar];
-  const float TopVarCascCutsPbPb[NTopCascVar]= {-100., -100., 0.95, 0.95, -100., 0.5, 0.9, -100., 1.4, 1.4, 0.02, 0.05, 0.1, 0.1, -100., -100., -100., -100., -100., -100., -100., -100.};
-  const float TopVarCascCutspp[NTopCascVar]={-100., -100., 0.95, 0.95, -100., 0.5, 0.9, -100., 2.0, 2.0, 0.05, 0.05, 0.03, 0.03, -100., -100., -100., -100., -100., -100., -100., -100.};
+  const float TopVarCascCutsPbPbRun2[NTopCascVar]= {-100., -100., 0.95, 0.95, -100., 0.5, 0.9, -100., 1.4, 1.4, 0.02, 0.05, 0.1, 0.1, -100., -100., -100., -100., -100., -100., -100., -100.};
+  const float TopVarCascCutsppRun2[NTopCascVar]={-100., -100., 0.95, 0.95, -100., 0.5, 0.9, -100., 2.0, 2.0, 0.05, 0.05, 0.03, 0.03, -100., -100., -100., -100., -100., -100., -100., -100.};
+  const float TopVarCascCutsPbPb[NTopCascVar]= {-100., -100., 0.7, 0.9, -100., 0, 0.5, -100., 2.0, 100, 0, 0, 0.05, 0.05, -100., -100., -100., -100., -100., -100., -100., -100.};
+  const float TopVarCascCutspp[NTopCascVar]={-100., -100., 0.7, 0.9, -100., 0, 0.5, -100., 2.0, 100, 0, 0, 0.05, 0.05, -100., -100., -100., -100., -100., -100., -100., -100.};
   for (Int_t i=0; i<NTopCascVar; i++){
+    if (CollType=="PbPb") TopVarCascCutsRun2[i] = TopVarCascCutsPbPbRun2[i];
+    else TopVarCascCutsRun2[i] = TopVarCascCutsppRun2[i];
     if (CollType=="PbPb") TopVarCascCuts[i] = TopVarCascCutsPbPb[i];
     else TopVarCascCuts[i] = TopVarCascCutspp[i];
   }
@@ -200,6 +215,12 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       fHistTopCasc1D[var]->GetYaxis()->SetTitle("1/N_{ev} Counts");
       fHistTopCasc1D[var]->SetTitle(TopVarCasc[var]);
       fHistTopCasc1D[var]->DrawCopy("hist");
+      SelLineRun2 = new TLine( TopVarCascCutsRun2[var], fHistTopCasc1D[var]->GetMinimum() ,  TopVarCascCutsRun2[var], fHistTopCasc1D[var]->GetMaximum());
+      SelLineRun2->SetLineColor(kGray);
+      //SelLineRun2->DrawClone("same");
+      SelLine = new TLine( TopVarCascCuts[var], fHistTopCasc1D[var]->GetMinimum() ,  TopVarCascCuts[var], fHistTopCasc1D[var]->GetMaximum());
+      SelLine->SetLineColor(kBlack);
+      SelLine->DrawClone("same");
       if (TopVarCascCutsCheckLimit[var]) {
         checkExactLimit(fHistTopCasc1D[var], TopVarCascCuts[var], TopVarCascCutsCheckLimit[var]-1, cutCheckLabels);
       }
