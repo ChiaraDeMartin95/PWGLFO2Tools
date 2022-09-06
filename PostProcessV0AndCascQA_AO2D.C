@@ -392,9 +392,11 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     
       canvasMC[part] = new TCanvas (Form("canvasMC%i", part), Form("canvasMC%i", part), 1200, 800);
       canvasMC[part]->Divide(3,1);
+      canvasMC[part]->SetTopMargin(0.1);
 
       canvasMC_Rdependence[part] = new TCanvas (Form("canvasMC_Rdependence%i", part), Form("canvasMC_Rdependence%i", part), 1200, 800);
       canvasMC_Rdependence[part]->Divide(3,1);
+      canvasMC_Rdependence[part]->SetTopMargin(0.1);
 
 	    if (part==0) partGen = 0; //K0s
 	    else if (part==1) partGen = 2; //Lambda
@@ -409,7 +411,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       if (part==0) fHistGen_Rintegrated[part]->Write();
 
       fHistGen_ptintegrated[part] = (TH1F*) fHistGen2D_ptintegrated->ProjectionY("GeneratedParticles_ptintegrated_"+NamePart[part], fHistGen2D_ptintegrated->GetXaxis()->FindBin(partGen+0.5), fHistGen2D_ptintegrated->GetXaxis()->FindBin(partGen+0.5), "e");
-      fHistGen_ptintegrated[part]->Rebin(4);
+      fHistGen_ptintegrated[part]->Rebin(8);
       if (part==0) fHistGen_ptintegrated[part]->Write();
 
       if (part<3) {
@@ -430,7 +432,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       fhistoInvMass2DTrue_ptintegrated[part]-> SetName(NamehistoInvMass[part]+"True_ptintegrated");
       if (part==0) fhistoInvMass2DTrue_ptintegrated[part]->Write();
       fhistoR1DTrue[part] = (TH1F*) fhistoInvMass2DTrue_ptintegrated[part]->ProjectionX(NamehistoInvMass[part]+"True_RProj", 0, -1,"E");
-      fhistoR1DTrue[part]->Rebin(4);
+      fhistoR1DTrue[part]->Rebin(8);
       if (part==0) fhistoR1DTrue[part]->Write();
 
       fHistEffvsPt[part] = (TH1F*) fhistoPt1DTrue[part]->Clone("EfficiencyvsPt_"+NamePart[part]);
@@ -453,22 +455,37 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       fHistGen_ptintegrated[part]->Scale(1./NEvents/fHistGen_ptintegrated[part]->GetBinWidth(1));
 
       canvasMC[part]->cd(1);
+      canvasMC[part]->cd(1)->SetLeftMargin(0.25);
+      canvasMC[part]->cd(1)->SetRightMargin(0.1);
+      canvasMC[part]->cd(1)->SetBottomMargin(0.15);
+      canvasMC[part]->cd(1)->SetTopMargin(0.1);
       setPadOptions(false);
       setHistGraphics(fHistGen_Rintegrated[part], false);
       fHistGen_Rintegrated[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dp_{T}");
+      fHistGen_Rintegrated[part]->GetYaxis()->SetTitleOffset(1.);
       fHistGen_Rintegrated[part]->SetTitle("Generated "+NamePart[part]+ " Yield");
       fHistGen_Rintegrated[part]->Draw("e0");
       fHistGen_Rintegrated[part]->Write();
 
       canvasMC[part]->cd(2);
+      canvasMC[part]->cd(2)->SetLeftMargin(0.25);
+      canvasMC[part]->cd(2)->SetRightMargin(0.1);
+      canvasMC[part]->cd(2)->SetBottomMargin(0.15);
+      canvasMC[part]->cd(2)->SetTopMargin(0.1);
       setPadOptions(false);
       setHistGraphics(fhistoPt1DTrue[part], false);
       fhistoPt1DTrue[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dp_{T}");
+      fhistoPt1DTrue[part]->GetYaxis()->SetTitleOffset(1.2);
       fhistoPt1DTrue[part]->SetTitle("Selected true "+NamePart[part]+ " Yield");
       fhistoPt1DTrue[part]->Draw("e0");
       fhistoPt1DTrue[part]->Write();
 
       canvasMC[part]->cd(3);
+      canvasMC[part]->cd(3)->SetLeftMargin(0.25);
+      canvasMC[part]->cd(3)->SetRightMargin(0.1);
+      canvasMC[part]->cd(3)->SetBottomMargin(0.15);
+      canvasMC[part]->cd(3)->SetTopMargin(0.1);
+      canvasMC[part]->cd(3)->SetGridy();
       setPadOptions(false);
       setHistGraphics(fHistEffvsPt[part], false);
       fHistEffvsPt[part]->GetYaxis()->SetRangeUser(0,1.);
@@ -479,25 +496,41 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       canvasMC[part]->SaveAs(PathOut+".pdf");
 
       canvasMC_Rdependence[part]->cd(1);
+      canvasMC_Rdependence[part]->cd(1)->SetLeftMargin(0.25);
+      canvasMC_Rdependence[part]->cd(1)->SetRightMargin(0.1);
+      canvasMC_Rdependence[part]->cd(1)->SetBottomMargin(0.15);
+      canvasMC_Rdependence[part]->cd(1)->SetTopMargin(0.1);
       setPadOptions(false);
       setHistGraphics(fHistGen_ptintegrated[part], false);
       fHistGen_ptintegrated[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dR");
+      fHistGen_ptintegrated[part]->GetXaxis()->SetTitle("Radius (cm)");
       fHistGen_ptintegrated[part]->SetTitle("Generated "+NamePart[part]+ " Yield");
       fHistGen_ptintegrated[part]->Draw("e0");
       fHistGen_ptintegrated[part]->Write();
 
       canvasMC_Rdependence[part]->cd(2);
+      canvasMC_Rdependence[part]->cd(2)->SetLeftMargin(0.25);
+      canvasMC_Rdependence[part]->cd(2)->SetRightMargin(0.1);
+      canvasMC_Rdependence[part]->cd(2)->SetBottomMargin(0.15);
+      canvasMC_Rdependence[part]->cd(2)->SetTopMargin(0.1);
       setPadOptions(false);
       setHistGraphics(fhistoR1DTrue[part], false);
       fhistoR1DTrue[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dR");
+      fhistoR1DTrue[part]->GetXaxis()->SetTitle("Radius (cm)");
       fhistoR1DTrue[part]->SetTitle("Selected true "+NamePart[part]+ " Yield");
       fhistoR1DTrue[part]->Draw("e0");
       fhistoR1DTrue[part]->Write();
 
       canvasMC_Rdependence[part]->cd(3);
+      canvasMC_Rdependence[part]->cd(3)->SetLeftMargin(0.25);
+      canvasMC_Rdependence[part]->cd(3)->SetRightMargin(0.1);
+      canvasMC_Rdependence[part]->cd(3)->SetBottomMargin(0.15);
+      canvasMC_Rdependence[part]->cd(3)->SetTopMargin(0.1);
+      canvasMC_Rdependence[part]->cd(3)->SetGridy();
       setPadOptions(false);
       setHistGraphics(fHistEffvsRadius[part], false);
       fHistEffvsRadius[part]->GetYaxis()->SetRangeUser(0,1.);
+      fHistEffvsRadius[part]->GetXaxis()->SetTitle("Radius (cm)");
       fHistEffvsRadius[part]->SetTitle("Efficiency vs decay radius "+NamePart[part]);
       fHistEffvsRadius[part]->Draw("e0");
       fHistEffvsRadius[part]->Write();
