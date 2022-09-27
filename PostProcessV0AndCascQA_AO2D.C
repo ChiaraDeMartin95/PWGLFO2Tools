@@ -45,10 +45,11 @@ Double_t SetEfficiencyError(Int_t k, Int_t n);
 void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int_t RebinTPC=0,
                       Int_t SkipCascFits = 0, // 0 = don't skip, 1 = skip Omegas, 2 = skip all cascades
                       Bool_t TopologyOnly = false, // true = only topology analysis, false = complete analysis
-                      TString PathIn  = "../Run3QA/LHC22f_pass1/AnalysisResults_Train34281_qa.root", // input file name
-		                  TString PathOut = "../Run3QA/LHC22f_pass1/PostProcessing_Train34281",                     // output file name
+                      TString PathIn  = "../Run3QA/LHC22m_pass1/AnalysisResults_Train36828_qa.root", // input file name
+		                  TString PathOut = "../Run3QA/LHC22m_pass1/PostProcessing_Train36828",                     // output file name
                       Bool_t CheckOldPass = false,                                                // true to compare two passes
-                      TString OldPassPath = ".."                  // input/output file name (old pass to be compared with)
+                      TString OldPassPath = "..",                  // input/output file name (old pass to be compared with)
+                      Bool_t isMassvsRadiusPlots = 0
                       ) {
   // Define pass names
   TString pass_names[2] = {"pass1", "pass3"};
@@ -124,6 +125,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   }
 
   TFile *f_old = CheckOldPass ? new TFile(OldPassPath, "") : nullptr;
+  if (isMassvsRadiusPlots) PathOut += "_MassvsRadius";
   TFile *f_out = new TFile(PathOut+".root", "recreate");
 
   // V0 topology
@@ -246,12 +248,31 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   if (TopologyOnly) return;
 
   // Define pt binning
-  const Int_t numPt = 7;
+  const Int_t num = 9;
+  Int_t numPt = 7;
+  Int_t numRadius = 9;
+  Int_t numEff = 0;
+  if (isMassvsRadiusPlots) numEff = numRadius;
+  else numEff = numPt;
   
-  Float_t NPt[numPt][2] = {{0., 10.}, {0., 1.}, {1., 2.}, {2., 3.}, {3., 4.}, {4., 6.}, {6., 10.}};
-  TString SPt[numPt] = {"0.0-10.0", "0.0-1.0", "1.0-2.0", "2.0-3.0", "3.0-4.0", "4.0-6.0", "6.0-10.0"};
-  Float_t PtVector[numPt] = {0., 1., 2., 3., 4., 6., 10.};
+  Float_t NPt[num][2] = {{0., 10.}, {0., 1.}, {1., 2.}, {2., 3.}, {3., 4.}, {4., 6.}, {6., 10.}};
+  TString SPt[num] = {"0.0-10.0", "0.0-1.0", "1.0-2.0", "2.0-3.0", "3.0-4.0", "4.0-6.0", "6.0-10.0"};
+  Float_t PtVector[num] = {0., 1., 2., 3., 4., 6., 10.};
   
+  Float_t NRadius[num][2] = {{0., 50.}, {0., 3.}, {3., 6.}, {6., 9.}, {9., 12.}, {12., 15.}, {15., 20.}, {20., 30.}, {30., 50.}};
+  TString SRadius[num] = {"0.0-50.0", "0.0-3.0", "3.0-6.0", "6.0-9.0", "9.0-12.0", "12.0-15.0", "15.0-20.0", "20.0-30.0", "30.0-50.0"};
+  Float_t RadiusVector[num] = {0., 3., 6., 9., 12., 15., 20., 30, 50};
+  
+  if (isMassvsRadiusPlots) {
+    for (Int_t i=0; i< numRadius; i++) {
+     PtVector[i] = RadiusVector[i];
+     SPt[i] = SRadius[i];
+     for (Int_t j=0; j<2; j++){
+      NPt[i][j] = NRadius[i][j];
+     }
+   }
+  }
+
   //Low stat binning 
   /*
   Float_t NPt[numPt][2] = {{0., 4.}, {0., 0.4}, {0.4, 0.8}, {0.8, 1.4}, {1.4, 2.2}, {2.2, 3.0}, {3., 4.}};
@@ -271,7 +292,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   TString LambdaDaugtersLong[nDaughters] = {"Pion", "Proton"};
   TH2F *fhistodEdxDaughters2D[nDaughters];
   TCanvas *canvasDaughtersdEdx[nDaughters];
-  TH1F *fhistodEdxDaughters1D[numPt][nDaughters];
+  TH1F *fhistodEdxDaughters1D[num][nDaughters];
   TH1F *fHistPeak[nDaughters];
   TCanvas *canvasLambdaDaughtersvsPt = new TCanvas ("canvasLambdaDaughtersvsPt", "canvasLambdaDaughtersvsPt", 1200, 800);
   canvasLambdaDaughtersvsPt->Divide(2,1);
@@ -295,7 +316,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     }
     canvasDaughtersdEdx[iDaughter]->SaveAs(PathOut+".pdf");
     canvasLambdaDaughtersvsPt->cd(iDaughter+1);
-    fHistPeak[iDaughter]->GetYaxis()->SetRangeUser(-1.5, 1.5);
+    fHistPeak[iDaughter]->GetYaxis()->SetRangeUser(-3, 3);
     fHistPeak[iDaughter]->GetXaxis()->SetTitle("p_{T} (GeV/c)");
     fHistPeak[iDaughter]->GetYaxis()->SetTitle("N_{#sigma} Peak");
     fHistPeak[iDaughter]->Draw("e");
@@ -306,46 +327,56 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   // V0 and cascade invariant mass
   cout << "Processing V0 and cascade invariant masses" << endl;
   TCanvas *canvasMassvsPt[numPart];
+  TCanvas *canvasEta[numPart];
   TCanvas *canvasMass[numPart];
   TCanvas *canvasResultsvsPt[numPart];
   TH3F *fhistoInvMass3DTrue[numPart];
   TH2F *fhistoInvMass2D[numPart];
+  TH2F *fhistoInvMass2DRadius[numPart];
   TH2F *fhistoInvMass2DTrue_Rintegrated[numPart];
   TH2F *fhistoInvMass2DTrue_ptintegrated[numPart];
-  TH1F *fhistoInvMass1D[numPart][numPt];
+  TH1F *fhistoInvMass1D[numPart][num];
   TH1F *fhistoPt1DTrue[numPart];
   TH1F *fhistoR1DTrue[numPart];
+
+  TH3F *fhistoInvMass3D[numPart]; 
+  TH2F *fhistoMassvsEta1_Eta2Neg[numPart]; 
+  TH2F *fhistoMassvsEta1_Eta2Pos[numPart]; 
+  TH1F *fhistoMassEtaPos[numPart];
+  TH1F *fhistoMassEtaNeg[numPart];
+  TH1F *fhistoMassEta1Pos_Eta2Neg[numPart];
+  TH1F *fhistoMassEta1Neg_Eta2Pos[numPart];
 
   Float_t min_range_signal[numPart] = {0.485, 1.112, 1.112, 1.315, 1.315, 1.668, 1.668};
   Float_t max_range_signal[numPart] = {0.51, 1.12, 1.12, 1.328, 1.328, 1.677, 1.677};
   Float_t liminf[numPart] = {0.44, 1.09, 1.09, 1.30, 1.30, 1.65, 1.65};
   Float_t limsup[numPart] = {0.58, 1.15, 1.15, 1.35, 1.35, 1.70, 1.70};
-  TF1 *gauss[numPart][numPt];
-  TF1 *bkgparab[numPart][numPt];
-  TF1 *total[numPart][numPt];
-  TF1 *totalbis[numPart][numPt];
+  TF1 *gauss[numPart][num];
+  TF1 *bkgparab[numPart][num];
+  TF1 *total[numPart][num];
+  TF1 *totalbis[numPart][num];
      
-  Double_t parGaussParab[numPart][numPt][6];  
-  TFitResultPtr fFitResultPtr0[numPart][numPt];
-  TFitResultPtr fFitResultPtr1[numPart][numPt];
+  Double_t parGaussParab[numPart][num][6];  
+  TFitResultPtr fFitResultPtr0[numPart][num];
+  TFitResultPtr fFitResultPtr1[numPart][num];
 
-  Double_t Mean[numPart][numPt];
-  Double_t ErrMean[numPart][numPt];
-  Double_t Sigma[numPart][numPt];
-  Double_t ErrSigma[numPart][numPt];
-  Double_t sigmas[numPart][numPt];
-  Double_t sigmab[numPart][numPt];
-  Double_t YieldS[numPart][numPt];
-  Double_t YieldB[numPart][numPt];
-  Float_t YieldSNotScaled[numPart][numPt];
-  Float_t YieldBNotScaled[numPart][numPt];
-  Double_t IntegralS[numPart][numPt];
-  Double_t IntegralB[numPart][numPt];
-  Double_t ErrYieldS[numPart][numPt];
-  Double_t ErrYieldB[numPart][numPt];
-  Double_t SSB[numPart][numPt];
-  Double_t ErrSSB[numPart][numPt];
-  Double_t SPlusB[numPart][numPt] = {0};
+  Double_t Mean[numPart][num];
+  Double_t ErrMean[numPart][num];
+  Double_t Sigma[numPart][num];
+  Double_t ErrSigma[numPart][num];
+  Double_t sigmas[numPart][num];
+  Double_t sigmab[numPart][num];
+  Double_t YieldS[numPart][num];
+  Double_t YieldB[numPart][num];
+  Float_t YieldSNotScaled[numPart][num];
+  Float_t YieldBNotScaled[numPart][num];
+  Double_t IntegralS[numPart][num];
+  Double_t IntegralB[numPart][num];
+  Double_t ErrYieldS[numPart][num];
+  Double_t ErrYieldB[numPart][num];
+  Double_t SSB[numPart][num];
+  Double_t ErrSSB[numPart][num];
+  Double_t SPlusB[numPart][num] = {0};
   
   TH1F *fHistMean[numPart];
   TH1F *fHistSigma[numPart];
@@ -539,30 +570,36 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
 
     }
     
-    fHistMean[part] = new TH1F("Mean_"+NamePart[part], "Mean_"+NamePart[part], numPt-1, PtVector);
-    fHistSigma[part] = new TH1F("Sigma_"+NamePart[part], "Sigma_"+NamePart[part], numPt-1, PtVector);
-    fHistYield[part] = new TH1F("Yield_"+NamePart[part], "Yield_"+NamePart[part], numPt-1, PtVector);
-    fHistSSB[part] = new TH1F("Purity_"+NamePart[part], "Purity_"+NamePart[part], numPt-1, PtVector);
+    fHistMean[part] = new TH1F("Mean_"+NamePart[part], "Mean_"+NamePart[part], numEff-1, PtVector);
+    fHistSigma[part] = new TH1F("Sigma_"+NamePart[part], "Sigma_"+NamePart[part], numEff-1, PtVector);
+    fHistYield[part] = new TH1F("Yield_"+NamePart[part], "Yield_"+NamePart[part], numEff-1, PtVector);
+    fHistSSB[part] = new TH1F("Purity_"+NamePart[part], "Purity_"+NamePart[part], numEff-1, PtVector);
     fHistYield[part]->Sumw2();
     
     canvasMass[part] = new TCanvas (Form("canvasMass%i", part), NamehistoInvMass[part], 1200, 800);
     canvasMassvsPt[part] = new TCanvas (Form("canvasMassPt%i", part), NamehistoInvMass[part], 1200, 800);
-    canvasMassvsPt[part]->Divide(3,2);
+    if (numEff > 7) canvasMassvsPt[part]->Divide(3,3);
+    else canvasMassvsPt[part]->Divide(3,2);
     canvasResultsvsPt[part] = new TCanvas (Form("canvasResults%i", part), NamePart[part], 1200, 800);
     canvasResultsvsPt[part]->Divide(2,2);
-    
+
+    TString NameHisto = "";
+    if (isMassvsRadiusPlots) NameHisto = "_Radius";
+    else NameHisto = "";
+
     if (part<3) {
-      fhistoInvMass2D[part] = (TH2F*)dirV0->Get(NamehistoInvMass[part]);
+      fhistoInvMass2D[part] = (TH2F*)dirV0->Get(NamehistoInvMass[part]+NameHisto);
     } else {
-      fhistoInvMass2D[part] = (TH2F*)dirCasc->Get(NamehistoInvMass[part]);
+      fhistoInvMass2D[part] = (TH2F*)dirCasc->Get(NamehistoInvMass[part]+NameHisto);
     }
     if (!fhistoInvMass2D[part]) continue;
 
     //Fit loop
     cout << "Processing fits" << endl;
-    for (Int_t pt=0; pt<numPt; pt++){
+    for (Int_t pt=0; pt<numEff; pt++){
       fhistoInvMass1D[part][pt] = (TH1F*)fhistoInvMass2D[part]->ProjectionY(NamehistoInvMass[part]+Form("1D_Pt%i", pt), fhistoInvMass2D[part]->GetXaxis()->FindBin(NPt[pt][0]+0.0001), fhistoInvMass2D[part]->GetXaxis()->FindBin(NPt[pt][1]-0.0001));
-      fhistoInvMass1D[part][pt]->SetTitle(NamehistoInvMass[part]+ " "+SPt[pt]+ " GeV/c");
+      if (isMassvsRadiusPlots) fhistoInvMass1D[part][pt]->SetTitle(NamehistoInvMass[part]+ " "+SPt[pt]+ " cm");
+      else fhistoInvMass1D[part][pt]->SetTitle(NamehistoInvMass[part]+ " "+SPt[pt]+ " GeV/c");
 
       (pt) ? canvasMassvsPt[part]->cd(pt) : canvasMass[part]->cd();
       setPadOptions(false);
@@ -605,6 +642,8 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       bkgparab[part][pt]->GetParameters(&parGaussParab[part][pt][3]);
       total[part][pt]->SetParameters(parGaussParab[part][pt]);
 
+      //if (part <3) fFitResultPtr0[part][pt] = fhistoInvMass1D[part][pt]->Fit(total[part][pt],"SRB+Q");
+      //else fFitResultPtr0[part][pt] = fhistoInvMass1D[part][pt]->Fit(total[part][pt],"SRB+Q0");
       fFitResultPtr0[part][pt] = fhistoInvMass1D[part][pt]->Fit(total[part][pt],"SRB+Q");
       if (fFitResultPtr0[part][pt] < 0.) continue;//AIMERICcondition in case fFitResultPtr0[part][pt] is empty
       fhistoInvMass1D[part][pt]->GetXaxis()->SetTitle("inv. mass (GeV/c^{2})");
@@ -681,12 +720,16 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     
     //Plot mass mean value, width and yields and check their values
     setHistGraphics(fHistMean[part], false);    
+    if (isMassvsRadiusPlots) fHistMean[part]->GetXaxis()->SetTitle("R (cm)");
     fHistMean[part]->GetYaxis()->SetTitle("#mu (GeV/c^{2})");
     setHistGraphics(fHistSigma[part], false);
+    if (isMassvsRadiusPlots) fHistSigma[part]->GetXaxis()->SetTitle("R (cm)");
     fHistSigma[part]->GetYaxis()->SetTitle("#sigma (GeV/c^{2})");
     setHistGraphics(fHistYield[part], false);
+    if (isMassvsRadiusPlots) fHistYield[part]->GetXaxis()->SetTitle("R (cm)");
     fHistYield[part]->GetYaxis()->SetTitle("1/N_{ev} dN/dp_{T}");
     setHistGraphics(fHistSSB[part], false);
+    if (isMassvsRadiusPlots) fHistSSB[part]->GetXaxis()->SetTitle("R (cm)");
     fHistSSB[part]->GetYaxis()->SetTitle("S/(S+B)");
     
     canvasResultsvsPt[part]->cd(1);
@@ -784,6 +827,41 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
     
     canvasResultsvsPt[part]->SaveAs(PathOut+".pdf");
 
+    //mass vs eta daughters
+    if (isMassvsRadiusPlots){
+     if (part > 2) continue;
+     canvasEta[part] = new TCanvas (Form("canvasEta%i", part), NamehistoInvMass[part], 1200, 800);
+     canvasEta[part]->Divide(2,2);
+     fhistoInvMass3D[part] = (TH3F*)dirV0->Get(NamehistoInvMass[part]+ "_EtaDaughters");
+     if (!fhistoInvMass3D[part]) continue;
+
+     //eta1 = pos daughter, eta2 = neg daughter
+     fhistoInvMass3D[part]->GetYaxis()->SetRange(fhistoInvMass3D[part]->GetYaxis()->FindBin(0.001), fhistoInvMass3D[part]->GetYaxis()->FindBin(0.999));
+     fhistoMassvsEta1_Eta2Pos[part] = (TH2F*) fhistoInvMass3D[part]->Project3D("zxo"); //mass vs Eta1 (only pos Eta2)
+     fhistoMassEtaPos[part] = (TH1F*) fhistoMassvsEta1_Eta2Pos[part]->ProjectionY("hInvMass_EtaPos" + NamePart[part], fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(0.001), fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(0.999));
+     fhistoMassEta1Neg_Eta2Pos[part] = (TH1F*) fhistoMassvsEta1_Eta2Pos[part]->ProjectionY("hInvMass_Eta1NegEta2Pos" + NamePart[part], fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(-0.999), fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(-0.001));
+     
+     fhistoInvMass3D[part]->GetYaxis()->SetRange(fhistoInvMass3D[part]->GetYaxis()->FindBin(-0.999), fhistoInvMass3D[part]->GetYaxis()->FindBin(-0.001));
+     fhistoMassvsEta1_Eta2Neg[part] = (TH2F*) fhistoInvMass3D[part]->Project3D("zxo"); //mass vs Eta1 (only neg Eta2)
+     fhistoMassEtaNeg[part] = (TH1F*) fhistoMassvsEta1_Eta2Neg[part]->ProjectionY("hInvMass_EtaNeg" + NamePart[part], fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(-0.999), fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(-0.001));
+     fhistoMassEta1Pos_Eta2Neg[part] = (TH1F*) fhistoMassvsEta1_Eta2Neg[part]->ProjectionY("hInvMass_Eta1PosEta2Neg" + NamePart[part], fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(0.001), fhistoMassvsEta1_Eta2Pos[part]->GetXaxis()->FindBin(0.999));
+     
+     fhistoMassEta1Pos_Eta2Neg[part]->SetTitle("Invariant mass " + NamePart[part]+ " opposite sign eta daughters (#eta_{+} > 0, #eta_{-} < 0)");
+     fhistoMassEta1Neg_Eta2Pos[part]->SetTitle("Invariant mass " + NamePart[part]+ " opposite sign eta daughters (#eta_{+} < 0, #eta_{-} > 0)");
+     fhistoMassEtaPos[part]->SetTitle("Invariant mass " + NamePart[part]+ " same sign eta daughters (#eta_{+} > 0, #eta_{-} > 0)");
+     fhistoMassEtaNeg[part]->SetTitle("Invariant mass " + NamePart[part]+ " same sign eta daughters (#eta_{+} < 0, #eta_{-} < 0)");
+
+     canvasEta[part]->cd(1);
+     fhistoMassEtaPos[part]->Draw();
+     canvasEta[part]->cd(2);
+     fhistoMassEtaNeg[part]->Draw();
+     canvasEta[part]->cd(3);
+     fhistoMassEta1Pos_Eta2Neg[part]->Draw();
+     canvasEta[part]->cd(4);
+     fhistoMassEta1Neg_Eta2Pos[part]->Draw();
+         
+     canvasEta[part]->SaveAs(PathOut+".pdf");
+    }
   }
 
   //draw ratio between particle and antiparticle yields
