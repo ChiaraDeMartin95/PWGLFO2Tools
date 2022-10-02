@@ -45,8 +45,8 @@ Double_t SetEfficiencyError(Int_t k, Int_t n);
 void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int_t RebinTPC=0,
                       Int_t SkipCascFits = 0, // 0 = don't skip, 1 = skip Omegas, 2 = skip all cascades
                       Bool_t TopologyOnly = false, // true = only topology analysis, false = complete analysis
-                      TString PathIn  = "../Run3QA/LHC22m_pass1/AnalysisResults_Train36828_qa.root", // input file name
-		                  TString PathOut = "../Run3QA/LHC22m_pass1/PostProcessing_Train36828",                     // output file name
+                      TString PathIn  = "PathIn.root",  // input file name
+		                  TString PathOut = "PathOut",                     // output file name
                       Bool_t CheckOldPass = false,                                                // true to compare two passes
                       TString OldPassPath = "..",                  // input/output file name (old pass to be compared with)
                       Bool_t isMassvsRadiusPlots = 0
@@ -217,6 +217,8 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       } else {
         fHistTopCasc1D[var] = (TH1F*)fHistTopCasc2D[var-4]->ProjectionX(TopVarCascInput[var-4], 2, 2);
       }
+      if(!fHistTopCasc1D[var]) cout << TopVarCascInput[var] << endl;
+      
       canvasTopologyCasc[i_Canv]->cd(var+1-kCumvariblesPerCanvas[i_Canv]);
       fHistTopCasc1D[var]->Scale(1./NEvents);
       if (var>1 && var<14 && var!=7) fHistTopCasc1D[var]->GetYaxis()->SetRangeUser(0.1*fHistTopCasc1D[var]->GetMinimum(1.e-10), 10*fHistTopCasc1D[var]->GetMaximum());
@@ -328,6 +330,9 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   cout << "Processing V0 and cascade invariant masses" << endl;
   TCanvas *canvasMassvsPt[numPart];
   TCanvas *canvasEta[numPart];
+  TCanvas *canvasPhi[numPart];
+  TCanvas *canvasPhi_2D[numPart];
+  TCanvas *canvasITSNLayer[numPart];
   TCanvas *canvasMass[numPart];
   TCanvas *canvasResultsvsPt[numPart];
   TH3F *fhistoInvMass3DTrue[numPart];
@@ -346,6 +351,18 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
   TH1F *fhistoMassEtaNeg[numPart];
   TH1F *fhistoMassEta1Pos_Eta2Neg[numPart];
   TH1F *fhistoMassEta1Neg_Eta2Pos[numPart];
+  
+  TH3F *fhistoInvMass3D_Phi[numPart]; 
+  TH2F* fhistoInvMass2D_Phi[numPart];
+  TH2F *fhistoMassvsPhi1_Phi2Neg[numPart]; 
+  TH2F *fhistoMassvsPhi1_Phi2Pos[numPart]; 
+  TH1F *fhistoMassPhiPos[numPart];
+  TH1F *fhistoMassPhiNeg[numPart];
+  TH1F *fhistoMassPhi1Pos_Phi2Neg[numPart];
+  TH1F *fhistoMassPhi1Neg_Phi2Pos[numPart];
+  
+  TH2F* fhistoInvMass2D_ITSNL[numPart];
+  TH3F* fhistoInvMass3D_ITSNL[numPart];     
 
   Float_t min_range_signal[numPart] = {0.485, 1.112, 1.112, 1.315, 1.315, 1.668, 1.668};
   Float_t max_range_signal[numPart] = {0.51, 1.12, 1.12, 1.328, 1.328, 1.677, 1.677};
@@ -833,8 +850,7 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
      canvasEta[part] = new TCanvas (Form("canvasEta%i", part), NamehistoInvMass[part], 1200, 800);
      canvasEta[part]->Divide(2,2);
      fhistoInvMass3D[part] = (TH3F*)dirV0->Get(NamehistoInvMass[part]+ "_EtaDaughters");
-     if (!fhistoInvMass3D[part]) continue;
-
+     if (!fhistoInvMass3D[part]) continue;     
      //eta1 = pos daughter, eta2 = neg daughter
      fhistoInvMass3D[part]->GetYaxis()->SetRange(fhistoInvMass3D[part]->GetYaxis()->FindBin(0.001), fhistoInvMass3D[part]->GetYaxis()->FindBin(0.999));
      fhistoMassvsEta1_Eta2Pos[part] = (TH2F*) fhistoInvMass3D[part]->Project3D("zxo"); //mass vs Eta1 (only pos Eta2)
@@ -861,6 +877,64 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
      fhistoMassEta1Neg_Eta2Pos[part]->Draw();
          
      canvasEta[part]->SaveAs(PathOut+".pdf");
+    
+     //mass vs phi daughters
+     canvasPhi[part] = new TCanvas (Form("canvasPhi%i", part), NamehistoInvMass[part], 1200, 800);
+     canvasPhi[part]->Divide(2,2);
+     
+     fhistoInvMass3D_Phi[part] = (TH3F*)dirV0->Get(NamehistoInvMass[part]+ "_PhiDaughters");
+     if (!fhistoInvMass3D_Phi[part]) continue;
+     //phi1 = pos daughter, phi2 = neg daughter
+     fhistoInvMass3D_Phi[part]->GetYaxis()->SetRange(fhistoInvMass3D_Phi[part]->GetYaxis()->FindBin(0.001), fhistoInvMass3D_Phi[part]->GetYaxis()->FindBin(TMath::Pi()));
+     fhistoMassvsPhi1_Phi2Pos[part] = (TH2F*) fhistoInvMass3D_Phi[part]->Project3D("zxo"); //mass vs Phi1 (only pos Phi2)
+     fhistoMassPhiPos[part] = (TH1F*) fhistoMassvsPhi1_Phi2Pos[part]->ProjectionY("hInvMass_PhiPos" + NamePart[part], fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(0.001), fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(TMath::Pi()));
+     fhistoMassPhi1Neg_Phi2Pos[part] = (TH1F*) fhistoMassvsPhi1_Phi2Pos[part]->ProjectionY("hInvMass_Phi1NegPhi2Pos" + NamePart[part], fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(TMath::Pi()), fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(2*TMath::Pi()));
+     
+     fhistoInvMass3D_Phi[part]->GetYaxis()->SetRange(fhistoInvMass3D_Phi[part]->GetYaxis()->FindBin(TMath::Pi()), fhistoInvMass3D_Phi[part]->GetYaxis()->FindBin(2*TMath::Pi()));
+     fhistoMassvsPhi1_Phi2Neg[part] = (TH2F*) fhistoInvMass3D_Phi[part]->Project3D("zxo"); //mass vs Phi1 (only neg Phi2)
+     fhistoMassPhiNeg[part] = (TH1F*) fhistoMassvsPhi1_Phi2Neg[part]->ProjectionY("hInvMass_PhiNeg" + NamePart[part], fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(TMath::Pi()), fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(2*TMath::Pi()));
+     fhistoMassPhi1Pos_Phi2Neg[part] = (TH1F*) fhistoMassvsPhi1_Phi2Neg[part]->ProjectionY("hInvMass_Phi1PosPhi2Neg" + NamePart[part], fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(0.001), fhistoMassvsPhi1_Phi2Pos[part]->GetXaxis()->FindBin(TMath::Pi()));
+     
+     fhistoMassPhi1Pos_Phi2Neg[part]->SetTitle("Invariant mass " + NamePart[part]+ " opposite sign Phi daughters ( 0 < #phi_{+} < #pi, #pi < #phi_{-} < 2#pi)");
+     fhistoMassPhi1Neg_Phi2Pos[part]->SetTitle("Invariant mass " + NamePart[part]+ " opposite sign Phi daughters (#pi< #phi_{+} < 2#pi, 0 < #phi_{-} < #pi)");
+     fhistoMassPhiPos[part]->SetTitle("Invariant mass " + NamePart[part]+ " same sign Phi daughters ( 0 < #phi_{+} < #pi, 0 < #phi_{-} < #pi)");
+     fhistoMassPhiNeg[part]->SetTitle("Invariant mass " + NamePart[part]+ " same sign Phi daughters (#pi< #phi_{+} < 2#pi, #pi < #phi_{-} < 2#pi)");
+
+     canvasPhi[part]->cd(1);
+     fhistoMassPhiPos[part]->Draw();
+     canvasPhi[part]->cd(2);
+     fhistoMassPhiNeg[part]->Draw();
+     canvasPhi[part]->cd(3);
+     fhistoMassPhi1Pos_Phi2Neg[part]->Draw();
+     canvasPhi[part]->cd(4);
+     fhistoMassPhi1Neg_Phi2Pos[part]->Draw();
+         
+     canvasPhi[part]->SaveAs(PathOut+".pdf");
+
+     canvasPhi_2D[part] = new TCanvas (Form("canvasPhi_2D%i", part), NamehistoInvMass[part], 1200, 800);
+     fhistoInvMass3D_Phi[part]->GetYaxis()->SetRange(1, fhistoInvMass3D_Phi[part]->GetNbinsX());
+     fhistoInvMass2D_Phi[part] = (TH2F*) fhistoInvMass3D_Phi[part]->Project3D("yx"); //mass vs Phi1 (only pos Phi2)
+     
+     fhistoInvMass2D_Phi[part]->GetYaxis()->SetTitle("#phi Neg Daughter");
+     fhistoInvMass2D_Phi[part]->GetXaxis()->SetTitle("#phi Pos Daughter");
+  
+     canvasPhi_2D[part]->cd(1);
+     fhistoInvMass2D_Phi[part]->Draw("colz");
+     canvasPhi_2D[part]->SaveAs(PathOut+".pdf");
+
+
+     //Number of ITS layers of daughters
+     canvasITSNLayer[part] = new TCanvas (Form("canvasITSNLayer%i", part), NamehistoInvMass[part], 1200, 800);
+     fhistoInvMass3D_ITSNL[part] = (TH3F*)dirV0->Get(NamehistoInvMass[part]+ "_ITSMapDaughters");
+     
+     fhistoInvMass2D_ITSNL[part] = (TH2F*) fhistoInvMass3D_ITSNL[part]->Project3D("yx"); 
+     fhistoInvMass2D_ITSNL[part]->GetYaxis()->SetTitle("# ITS Layers Neg Daughter");
+     fhistoInvMass2D_ITSNL[part]->GetXaxis()->SetTitle("# ITS Layers Pos Daughter");
+  
+     canvasITSNLayer[part]->cd(1);
+     fhistoInvMass2D_ITSNL[part]->Draw("colz");
+     canvasITSNLayer[part]->SaveAs(PathOut+".pdf");
+
     }
   }
 
