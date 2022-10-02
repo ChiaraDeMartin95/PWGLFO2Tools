@@ -217,7 +217,6 @@ void PostProcessV0AndCascQA_AO2D(TString CollType = "pp", Bool_t isMC=false, Int
       } else {
         fHistTopCasc1D[var] = (TH1F*)fHistTopCasc2D[var-4]->ProjectionX(TopVarCascInput[var-4], 2, 2);
       }
-      if(!fHistTopCasc1D[var]) cout << TopVarCascInput[var] << endl;
       
       canvasTopologyCasc[i_Canv]->cd(var+1-kCumvariblesPerCanvas[i_Canv]);
       fHistTopCasc1D[var]->Scale(1./NEvents);
