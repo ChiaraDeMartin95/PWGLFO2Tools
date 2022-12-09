@@ -23,6 +23,7 @@
 #include "TRatioPlot.h"
 #include "TLegend.h"
 #include "TPad.h"
+#include "TSpline.h"
 
 void StyleHisto(TH1F *histo, Float_t Low, Float_t Up, Int_t color, Int_t style, TString titleX, TString titleY, TString title, Bool_t XRan\
 ge,
@@ -73,11 +74,24 @@ void StylePad(TPad *pad, Float_t LMargin, Float_t RMargin, Float_t TMargin, Floa
   pad->SetBottomMargin(BMargin);
 }
 
+TSpline3 *sp3;
+Double_t spline(Double_t *x, Double_t *p)
+{
+  Double_t xx = x[0];
+  return sp3->Eval(xx);
+}
+
 const Int_t numPart = 7;
 const Int_t numChoice = 4; // mean, sigma, purity, yield
 Float_t ParticleMassPDG[numPart] = {0.497611, 1.115683, 1.115683, 1.32171, 1.32171, 1.67245, 1.67245};
 
-void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1", TString year1 = "LHC16k_pass3", TString Sfilein0 = "../Run3QA/LHC22m_pass1/PostProcessing_Train44413_22m.root", TString Sfilein1 = "../LHC16k_pass3/PostProcessLHC16k_pass3.root", TString OutputDir = "../Run3QA/LHC22m_pass1/")
+void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
+                             TString year1 = "LHC16k_pass3",
+                             TString Sfilein0 = "../Run3QA/LHC22m_pass1/PostProcessing_Train44413_22m.root",
+                             TString Sfilein1 = "../LHC16k_pass3/PostProcessLHC16k_pass3.root",
+                             TString OutputDir = "../Run3QA/LHC22m_pass1/",
+                             Bool_t isPseudoEfficiency = 1,
+                             TString SPublishedYieldForPseudoEff = "../PublishedYield13TeV/HEPData-ins1748157-v1-Table") // directory where published yields are stored
 {
 
   Int_t Choice = 0;
@@ -88,7 +102,11 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1", TString year1 = "LH
     cout << "Option not implemented" << endl;
     return;
   }
-
+  if (isPseudoEfficiency == 1 && Choice != 3)
+  {
+    cout << "To compute pseudoefficiency you must compare Yields" << endl;
+    return;
+  }
   TString TypeHisto[4] = {"Mean", "Sigma", "Purity", "Yield"};
   TString Spart[numPart] = {"K0S", "Lam", "ALam", "XiMin", "XiPlu", "OmMin", "OmPlu"};
   TString NamePart[numPart] = {"K^{0}_{S}", "#Lambda", "#bar{#Lambda}", "#Xi^{-}", "#Xi^{+}", "#Omega^{-}", "#Omega^{+}"};
@@ -178,6 +196,13 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1", TString year1 = "LH
         YUp[part] -= 10e-5;
     }
 
+    canvas[part] = new TCanvas("canvas" + Spart[part], "canvas" + Spart[part], 1000, 800);
+    StyleCanvas(canvas[part], 0.15, 0.05, 0.05, 0.15);
+    pad1[part] = new TPad("pad1" + Spart[part], "pad1" + Spart[part], 0, 0.36, 1, 1);
+    pad2[part] = new TPad("pad2" + Spart[part], "pad2" + Spart[part], 0, 0.01, 1, 0.35);
+    StylePad(pad1[part], 0.15, 0.05, 0.05, 0.01);
+    StylePad(pad2[part], 0.15, 0.05, 0.03, 0.2);
+
     TLegend *legend;
     if (Spart[part] == "XiPlu" && Choice == 0)
       legend = new TLegend(0.5, 0.25, 0.8, 0.45);
@@ -188,13 +213,6 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1", TString year1 = "LH
     else
       legend = new TLegend(0.5, 0.7, 0.8, 0.9);
     legend->AddEntry("", NamePart[part], "");
-
-    canvas[part] = new TCanvas("canvas" + Spart[part], "canvas" + Spart[part], 1000, 800);
-    StyleCanvas(canvas[part], 0.15, 0.05, 0.05, 0.15);
-    pad1[part] = new TPad("pad1" + Spart[part], "pad1" + Spart[part], 0, 0.36, 1, 1);
-    pad2[part] = new TPad("pad2" + Spart[part], "pad2" + Spart[part], 0, 0.01, 1, 0.35);
-    StylePad(pad1[part], 0.15, 0.05, 0.05, 0.01);
-    StylePad(pad2[part], 0.15, 0.05, 0.03, 0.2);
 
     StyleHisto(histo0[part], YLow[part], YUp[part], kRed + 2, 33, /*TitleXPt*/ "", TitleY[Choice], "", 0, 0, 0, 1.5, 1.5, 2);
     StyleHisto(histo1[part], YLow[part], YUp[part], kBlue + 2, 33, /*TitleXPt*/ "", TitleY[Choice], "", 0, 0, 0, 1.5, 1.5, 2);
@@ -233,6 +251,105 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1", TString year1 = "LH
       canvas[part]->SaveAs(Sfileout + ".pdf)");
     else
       canvas[part]->SaveAs(Sfileout + ".pdf");
+  }
+
+  // Pseudoefficiency
+  TH1F *histoPub[numPart];
+  TH1F *histoNum[numPart];
+  TH1F *histoRatioToPub[numPart];
+  TDirectoryFile *dir;
+  TString SfilePub = "";
+  TString FileName[numPart] = {"1", "2", "2", "3", "3", "4", "4"};
+  TString HistoNumber[numPart] = {"11", "11", "11", "11", "11", "6", "6"};
+  TSpline3 *splinePub[numPart];
+  TF1 *fsplinePub[numPart];
+  TCanvas *canvasRatioToPub[numPart];
+  TString SfileoutRatioToPub = OutputDir + "RatioToPub";
+  Float_t YLowRatioToPub = 0;
+  Float_t YUpRatioToPub = 0.01;
+  Float_t LowPub[numPart] = {0, 0.4, 0.4, 0.6, 0.6, 0.9, 0.9}; // lowe values of published yields
+  Float_t UpPub[numPart] = {10, 6.5, 6.5, 5.5, 5.5, 5.5, 5.5}; // upper value of published yields
+  Float_t Low[numPart] = {0, 0.4, 0.4, 0.6, 0.6, 0.9, 0.9};
+  Float_t Up[numPart] = {0, 6, 6, 4, 4, 4, 4};
+
+  if (isPseudoEfficiency)
+  {
+    cout << "\n\n\e[35mComputation of pseudoefficiency \e[39m" << endl;
+    for (Int_t part = 0; part < numPart; part++)
+    {
+      cout << "\n\e[35mParticle:\e[39m " << Spart[part] << endl;
+      SfilePub = SPublishedYieldForPseudoEff + "_" + FileName[part] + ".root";
+      TFile *filePub = new TFile(SfilePub, "");
+      if (!filePub)
+      {
+        cout << "File " << SfilePub << " not available " << endl;
+        return;
+      }
+      cout << "Input file with published yields: " << SfilePub << endl;
+      dir = (TDirectoryFile *)filePub->Get("Table " + FileName[part]);
+      if (!dir)
+      {
+        cout << "Input dir not available " << endl;
+        return;
+      }
+      histoPub[part] = (TH1F *)dir->Get("Hist1D_y" + HistoNumber[part]);
+      if (!histoPub[part])
+      {
+        cout << "Published histo not found" << endl;
+        return;
+      }
+      histoPub[part]->SetName("histoYieldPub" + Spart[part]);
+      if (part != 0)
+        histoPub[part]->Scale(1. / 2); // particle and antiparticle yields are summed
+      splinePub[part] = new TSpline3(histoPub[part], "Spline" + Spart[part]);
+      sp3 = (TSpline3 *)splinePub[part]->Clone("SplineClone" + Spart[part]);
+      fsplinePub[part] = new TF1("fSpline" + Spart[part], spline, 0, 10);
+
+      histoNum[part] = (TH1F *)histo0[part]->Clone("histoNum" + Spart[part]);
+      for (Int_t b = 1; b <= histoPub[part]->GetNbinsX(); b++)
+      {
+        // cout << fsplinePub[part]->Eval(histoPub[part]->GetBinCenter(b)) << " vs "
+        //<< histoPub[part]->GetBinContent(b) << endl;
+      }
+      histoRatioToPub[part] = (TH1F *)histoNum[part]->Clone("RatioToPub" + Spart[part]);
+      for (Int_t b = 1; b <= histoNum[part]->GetNbinsX(); b++)
+      {
+        Float_t ALow = histoNum[part]->GetXaxis()->GetBinLowEdge(b);
+        Float_t AUp = histoNum[part]->GetXaxis()->GetBinUpEdge(b);
+        if (fsplinePub[part]->Integral(ALow, AUp) <= 0)
+          continue;
+        Float_t Numerator = histoNum[part]->GetBinContent(b) * histoNum[part]->GetBinWidth(b);
+        histoRatioToPub[part]->SetBinContent(b, Numerator / fsplinePub[part]->Integral(ALow, AUp));
+        // cout << histoNum[part]->GetBinCenter(b) << " Alow: " << ALow << " AUp " << AUp << endl;
+        // cout << histoNum[part]->GetBinContent(b) << " +- " << histoNum[part]->GetBinError(b) << endl;
+        // cout << fsplinePub[part]->Integral(ALow, AUp) << " +- " << fsplinePub[part]->IntegralError(ALow, AUp) << endl;
+        // cout << histoRatioToPub[part]->GetBinContent(b) << " +- " << histoRatioToPub[part]->GetBinError(b) << endl;
+        histoRatioToPub[part]->SetBinError(b, sqrt(
+                                                  pow(histoNum[part]->GetBinError(b) / histoNum[part]->GetBinContent(b), 2) +
+                                                  pow(fsplinePub[part]->IntegralError(ALow, AUp) / fsplinePub[part]->Integral(ALow, AUp), 2)) *
+                                                  histoRatioToPub[part]->GetBinContent(b));
+      }
+      canvasRatioToPub[part] = new TCanvas("canvasRatioToPub" + Spart[part], "canvasRatioToPub" + Spart[part], 1000, 800);
+      StyleCanvas(canvasRatioToPub[part], 0.15, 0.05, 0.05, 0.15);
+
+      TLegend *legendRatioToPub = new TLegend(0.4, 0.6, 0.8, 0.8);
+      legendRatioToPub->AddEntry("", NamePart[part], "");
+      legendRatioToPub->AddEntry("", year0, "");
+
+      if (part > 2)
+        YUpRatioToPub = 0.001;
+      // YUpRatioToPub = 0.5; //this is OK for Run 2
+      StyleHisto(histoRatioToPub[part], YLowRatioToPub, YUpRatioToPub, kRed + 2, 33, TitleXPt, "Ratio to published yield", "", 0, 0, 0, 1.5, 1.5, 2);
+      histoRatioToPub[part]->GetXaxis()->SetRangeUser(Low[part], Up[part]);
+      histoRatioToPub[part]->Draw("");
+      legendRatioToPub->Draw("");
+      if (part == 0)
+        canvasRatioToPub[part]->SaveAs(SfileoutRatioToPub + ".pdf(");
+      else if (part == numPart - 1)
+        canvasRatioToPub[part]->SaveAs(SfileoutRatioToPub + ".pdf)");
+      else
+        canvasRatioToPub[part]->SaveAs(SfileoutRatioToPub + ".pdf");
+    }
   }
 
   cout << "\nI started from the files: " << endl;
