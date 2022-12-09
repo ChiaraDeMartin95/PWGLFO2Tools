@@ -86,9 +86,9 @@ const Int_t numChoice = 4; // mean, sigma, purity, yield
 Float_t ParticleMassPDG[numPart] = {0.497611, 1.115683, 1.115683, 1.32171, 1.32171, 1.67245, 1.67245};
 
 void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
-                             TString year1 = "LHC16k_pass3",
+                             TString year1 = "LHC22f_pass2" /*"LHC16k_pass3"*/,
                              TString Sfilein0 = "../Run3QA/LHC22m_pass1/PostProcessing_Train44413_22m.root",
-                             TString Sfilein1 = "../LHC16k_pass3/PostProcessLHC16k_pass3.root",
+                             TString Sfilein1 = "../Run3QA/LHC22f_pass2/PostProcessing_Train47130_22f.root" /*"../LHC16k_pass3/PostProcessLHC16k_pass3.root"*/,
                              TString OutputDir = "../Run3QA/LHC22m_pass1/",
                              Bool_t isPseudoEfficiency = 1,
                              TString SPublishedYieldForPseudoEff = "../PublishedYield13TeV/HEPData-ins1748157-v1-Table") // directory where published yields are stored
@@ -122,9 +122,9 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
   Float_t YLow[numPart] = {0};
   Float_t YUp[numPart] = {0};
   Float_t YLowRatio[4] = {0.95, 0.9, 0.01, 0};
-  Float_t YUpRatio[4] = {1.05, 3.0, 1, 0.05};
+  Float_t YUpRatio[4] = {1.05, 3.0, 1, 0.1};
 
-  TString Sfileout = OutputDir + "Compare" + TypeHisto[Choice];
+  TString Sfileout = OutputDir + "Compare" + TypeHisto[Choice] + "_" + year0 + "vs" + year1;
   TFile *filein0 = new TFile(Sfilein0, "");
   if (!filein0)
   {
@@ -182,12 +182,29 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
 
     // Ratios
     histoRatio[part] = (TH1F *)histo0[part]->Clone(inputName + "_Ratio");
+    if (histo0[part]->GetNbinsX() != histo1[part]->GetNbinsX())
+    {
+      cout << "The number of bins of the two histograms are different " << endl;
+      return;
+    }
     histoRatio[part]->Divide(histo1[part]);
+
+    for (Int_t b = 1; b <= histoRatio[part]->GetNbinsX(); b++)
+    {
+      // cout << "Num: " << histo0[part]->GetBinContent(b) << endl;
+      // cout << "Denom " << histo1[part]->GetBinContent(b) << endl;
+      // cout << "Ratio " << histoRatio[part]->GetBinContent(b) << endl;
+    }
 
     if (Choice == 3)
     {
       YLow[part] = 0;
       YUp[part] = 1.2 * histo1[part]->GetMaximum(histo1[part]->GetMaximumBin());
+      if (part > 2)
+        // YUpRatio[Choice] = 0.01; 22m_pass1 vs LHC16k
+        YUpRatio[Choice] = 0.2;
+      else
+        YUpRatio[Choice] = 1; // for 22m vs 22f comparison
     }
     if (Choice != 3)
     {
@@ -255,6 +272,7 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
 
   // Pseudoefficiency
   TH1F *histoPub[numPart];
+  TH1F *histoPubError[numPart];
   TH1F *histoNum[numPart];
   TH1F *histoRatioToPub[numPart];
   TDirectoryFile *dir;
@@ -264,13 +282,13 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
   TSpline3 *splinePub[numPart];
   TF1 *fsplinePub[numPart];
   TCanvas *canvasRatioToPub[numPart];
-  TString SfileoutRatioToPub = OutputDir + "RatioToPub";
+  TString SfileoutRatioToPub = OutputDir + "RatioToPub_" + year1;
   Float_t YLowRatioToPub = 0;
   Float_t YUpRatioToPub = 0.01;
   Float_t LowPub[numPart] = {0, 0.4, 0.4, 0.6, 0.6, 0.9, 0.9}; // lowe values of published yields
   Float_t UpPub[numPart] = {10, 6.5, 6.5, 5.5, 5.5, 5.5, 5.5}; // upper value of published yields
   Float_t Low[numPart] = {0, 0.4, 0.4, 0.6, 0.6, 0.9, 0.9};
-  Float_t Up[numPart] = {0, 6, 6, 4, 4, 4, 4};
+  Float_t Up[numPart] = {0, 4, 4, 4, 4, 4, 4};
 
   if (isPseudoEfficiency)
   {
@@ -299,13 +317,21 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
         return;
       }
       histoPub[part]->SetName("histoYieldPub" + Spart[part]);
+      histoPubError[part] = (TH1F *)dir->Get("Hist1D_y" + HistoNumber[part]+"_e1");
+      if (!histoPubError[part])
+      {
+        cout << "Published histo of STAT. ERRORS not found" << endl;
+        return;
+      }
+      histoPubError[part]->SetName("histoYieldPubError" + Spart[part]);
+
       if (part != 0)
         histoPub[part]->Scale(1. / 2); // particle and antiparticle yields are summed
       splinePub[part] = new TSpline3(histoPub[part], "Spline" + Spart[part]);
       sp3 = (TSpline3 *)splinePub[part]->Clone("SplineClone" + Spart[part]);
       fsplinePub[part] = new TF1("fSpline" + Spart[part], spline, 0, 10);
 
-      histoNum[part] = (TH1F *)histo0[part]->Clone("histoNum" + Spart[part]);
+      histoNum[part] = (TH1F *)histo1[part]->Clone("histoNum" + Spart[part]);
       for (Int_t b = 1; b <= histoPub[part]->GetNbinsX(); b++)
       {
         // cout << fsplinePub[part]->Eval(histoPub[part]->GetBinCenter(b)) << " vs "
@@ -319,15 +345,28 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
         if (fsplinePub[part]->Integral(ALow, AUp) <= 0)
           continue;
         Float_t Numerator = histoNum[part]->GetBinContent(b) * histoNum[part]->GetBinWidth(b);
+
+        Float_t SplineIntegralError = 0;
+        for (Int_t b = 1; b <= histoPubError[part]->GetNbinsX(); b++)
+        {
+          if (histoPubError[part]->GetBinCenter(b) < ALow)
+            continue;
+          if (histoPubError[part]->GetBinCenter(b) > AUp)
+            continue;
+          SplineIntegralError += pow(histoPubError[part]->GetBinContent(b), 2);
+        }
+        SplineIntegralError = sqrt(SplineIntegralError);
+
         histoRatioToPub[part]->SetBinContent(b, Numerator / fsplinePub[part]->Integral(ALow, AUp));
-        // cout << histoNum[part]->GetBinCenter(b) << " Alow: " << ALow << " AUp " << AUp << endl;
-        // cout << histoNum[part]->GetBinContent(b) << " +- " << histoNum[part]->GetBinError(b) << endl;
-        // cout << fsplinePub[part]->Integral(ALow, AUp) << " +- " << fsplinePub[part]->IntegralError(ALow, AUp) << endl;
-        // cout << histoRatioToPub[part]->GetBinContent(b) << " +- " << histoRatioToPub[part]->GetBinError(b) << endl;
         histoRatioToPub[part]->SetBinError(b, sqrt(
                                                   pow(histoNum[part]->GetBinError(b) / histoNum[part]->GetBinContent(b), 2) +
-                                                  pow(fsplinePub[part]->IntegralError(ALow, AUp) / fsplinePub[part]->Integral(ALow, AUp), 2)) *
+                                                  pow(SplineIntegralError / fsplinePub[part]->Integral(ALow, AUp), 2)) *
                                                   histoRatioToPub[part]->GetBinContent(b));
+
+        // cout << histoNum[part]->GetBinCenter(b) << " Alow: " << ALow << " AUp " << AUp << endl;
+        // cout << histoNum[part]->GetBinContent(b) << " +- " << histoNum[part]->GetBinError(b) << endl;
+        // cout << fsplinePub[part]->Integral(ALow, AUp) << " +- " << SplineIntegralError << endl;
+        // cout << histoRatioToPub[part]->GetBinContent(b) << " +- " << histoRatioToPub[part]->GetBinError(b) << endl;
       }
       canvasRatioToPub[part] = new TCanvas("canvasRatioToPub" + Spart[part], "canvasRatioToPub" + Spart[part], 1000, 800);
       StyleCanvas(canvasRatioToPub[part], 0.15, 0.05, 0.05, 0.15);
@@ -337,7 +376,10 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
       legendRatioToPub->AddEntry("", year0, "");
 
       if (part > 2)
-        YUpRatioToPub = 0.001;
+      {
+        // YUpRatioToPub = 0.001; //this is OK for 22m_pass1
+        YUpRatioToPub = 0.01; //this is OK for 22f_pass2
+      }
       // YUpRatioToPub = 0.5; //this is OK for Run 2
       StyleHisto(histoRatioToPub[part], YLowRatioToPub, YUpRatioToPub, kRed + 2, 33, TitleXPt, "Ratio to published yield", "", 0, 0, 0, 1.5, 1.5, 2);
       histoRatioToPub[part]->GetXaxis()->SetRangeUser(Low[part], Up[part]);
@@ -358,4 +400,6 @@ void CompareSigmaWidthPurity(TString year0 = "LHC22m_pass1",
 
   cout << "\nI created the file: " << endl;
   cout << Sfileout << endl;
+  if (isPseudoEfficiency)
+    cout << SfileoutRatioToPub << endl;
 }
